@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+  <meta charset="UTF-8" />
+  <title>MultiProperty Checker – MMI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Trimble Connect Workspace API -->
+  <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Plugin for prosenttekst inne i kakestykkene -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+
+  <style>
+    :root {
+      --primary: #0069d9;
+      --success: #28a745;
+      --danger: #e74c3c;
+      --warning: #ffc107;
+      --light: #f8f9fa;
+      --dark: #343a40;
+      --gray: #6c757d;
+      --border: #dee2e6;
+    }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #f5f7fa 0%, #e4edf5 100%);
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 18px;
+      position: relative;
+      z-index: 10;
+    }
+    .title-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 300px;
+    }
+    .logo {
+      width: 144px;
+      height: 144px;
+      border-radius: 8px;
+      object-fit: contain;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      background: #fff;
+      padding: 4px;
+    }
+    .title-block {
+      display: flex;
+      flex-direction: column;
+    }
+    .title {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--primary);
+      margin: 0;
+    }
+    .org {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--dark);
+      margin-top: -4px;
+    }
+    .dev {
+      font-size: 12px;
+      color: var(--gray);
+      margin-top: -2px;
+      font-style: italic;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: var(--gray);
+      font-style: italic;
+      margin-left: auto;
+      white-space: nowrap;
+    }
+    label {
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+    select, button {
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+    select {
+      background: white;
+      min-width: 180px;
+      max-width: 260px;
+    }
+    select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(0, 105, 217, 0.15);
+      outline: none;
+    }
+    button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+    button#scanButton { background: var(--success); }
+    button#scanButton:hover:not(:disabled) { background: #218838; }
+    button#resetButton { background: var(--danger); }
+    button#resetButton:hover:not(:disabled) { background: #c0392b; }
+    button#colorizeButton { background: #00c2cb; }
+    button#colorizeButton:hover:not(:disabled) { background: #00a0aa; }
+    button:disabled {
+      background: var(--gray);
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+      opacity: 0.85;
+    }
+    main {
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+      display: grid;
+      gap: 28px;
+      grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+      justify-items: center;
+    }
+    .chart-card {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      padding: 28px 24px 22px 24px;
+      width: 100%;
+      max-width: 550px;
+      text-align: center;
+      transition: transform 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .chart-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--primary), #00c2cb);
+      border-radius: 16px 16px 0 0;
+    }
+    .chart-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 32px rgba(0,0,0,0.18);
+    }
+    .chart-card h3 {
+      margin: 4px 0 16px 0;
+      font-size: 18px;
+      color: var(--dark);
+      font-weight: 600;
+      word-break: break-word;
+    }
+    .chart-summary {
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--gray);
+    }
+    canvas {
+      max-height: 320px;
+      border-radius: 12px;
+    }
+    #status, #error {
+      grid-column: 1 / -1;
+      text-align: center;
+      font-size: 15px;
+      padding: 10px 14px;
+      border-radius: 8px;
+    }
+    #status {
+      background: rgba(40, 167, 69, 0.1);
+      color: var(--success);
+      border: 1px solid rgba(40, 167, 69, 0.2);
+    }
+    #error {
+      background: rgba(220, 53, 69, 0.08);
+      color: var(--danger);
+      border: 1px solid rgba(220, 53, 69, 0.15);
+      display: none;
+    }
+    .footer-credit {
+      grid-column: 1 / -1;
+      text-align: center;
+      font-size: 14px;
+      color: #888;
+      margin-top: 8px;
+      font-style: italic;
+    }
+    .button-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .selector-row {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    @media (max-width: 1024px) {
+      header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .title-container {
+        justify-content: center;
+      }
+      .subtitle {
+        margin-left: 0;
+        text-align: center;
+      }
+      .selector-row {
+        justify-content: center;
+      }
+      .button-row {
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title-container">
+      <!-- Logo-fil må ligge i samme mappe som denne HTML-filen -->
+      <img src="norconsult-logo-black.png"
+           alt="Norconsult logo" class="logo">
+
+      <div class="title-block">
+        <h1 class="title">MultiProperty Checker</h1>
+        <div class="org">Norconsult Norge</div>
+        <div class="dev">Developed by Edin Dzakmic, Norconsult, (AI-assisted development)</div>
+      </div>
+    </div>
+
+    <span class="subtitle">MMI-fordeling direkte i modellen</span>
+
+    <div class="selector-row">
+      <label>
+        MMI Property Set:
+        <select id="psetSelect" disabled>
+          <option value="">(velg…)</option>
+        </select>
+      </label>
+
+      <label>
+        MMI property:
+        <select id="propSelect" disabled>
+          <option value="">(velg…)</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="button-row">
+      <button id="scanButton" disabled>🔄 Oppdater liste</button>
+      <button id="loadButton" disabled>📊 Hent MMI-fordeling</button>
+      <button id="colorizeButton" disabled>🎨 Fargelegg etter MMI</button>
+      <button id="resetButton" disabled>🔄 Tilbakestill farger</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="status">Kobler til Trimble Connect…</div>
+    <div id="error"></div>
+    <div id="chartsContainer"></div>
+    <div class="footer-credit">
+      MultiProperty Checker – MMI-oversikt basert på MMI-veilederen 2.0.<br>
+      Klikk på et kakestykke for å markere objekter med valgt MMI-kode i modellen.
+    </div>
+  </main>
+
+  <script>
+    let API = null;
+    let availableProps = {};
+    let charts = [];
+
+    // Globalt MMI-utvalg brukt til fargelegging
+    let mmiSelectionGlobal = {
+      selectionByCode: {},
+      missingSelection: {}
+    };
+
+    // MMI-farger fra MMI-veilederen 2.0 (tabell 1)
+    const MMI_COLORS = {
+      "000": "#D73296",
+      "100": "#BE2823",
+      "125": "#D24B46",
+      "150": "#E17873",
+      "175": "#F0AAAA",
+      "200": "#E69637",
+      "225": "#EBAF64",
+      "250": "#F0C88C",
+      "275": "#F5E6D7",
+      "300": "#FAF050",
+      "325": "#D7CD41",
+      "350": "#B9AF3C",
+      "375": "#9B9632",
+      "400": "#378246",
+      "425": "#4BAA5A",
+      "450": "#64C37D",
+      "475": "#9BD7A5",
+      "500": "#1E46AF",
+      "600": "#9B00CD"
+    };
+
+    const els = {
+      status: document.getElementById("status"),
+      error: document.getElementById("error"),
+      chartsContainer: document.getElementById("chartsContainer"),
+      psetSelect: document.getElementById("psetSelect"),
+      propSelect: document.getElementById("propSelect"),
+      scanButton: document.getElementById("scanButton"),
+      loadButton: document.getElementById("loadButton"),
+      colorizeButton: document.getElementById("colorizeButton"),
+      resetButton: document.getElementById("resetButton")
+    };
+
+    // Registrer datalabels-plugin for prosenttekst inne i kakestykkene
+    if (window.ChartDataLabels) {
+      Chart.register(ChartDataLabels);
+    }
+
+    function showError(msg) {
+      els.error.textContent = msg || "";
+      els.error.style.display = msg ? "block" : "none";
+    }
+
+    function setBusy(isBusy) {
+      const buttons = [
+        els.scanButton,
+        els.loadButton,
+        els.colorizeButton,
+        els.resetButton
+      ];
+      buttons.forEach(btn => {
+        if (!btn) return;
+        if (isBusy) {
+          btn.dataset.prevDisabled = btn.disabled ? "true" : "false";
+          btn.disabled = true;
+        } else if (btn.dataset.prevDisabled === "false") {
+          btn.disabled = false;
+        }
+      });
+    }
+
+    async function connect() {
+      try {
+        API = await TrimbleConnectWorkspace.connect(window.parent, () => {}, 30000);
+        els.status.textContent = "✅ Tilkoblet – trykk «Oppdater liste» for å hente MMI-egenskaper.";
+        els.scanButton.disabled = false;
+      } catch (e) {
+        showError("Kunne ikke koble til Trimble Connect: " + (e && e.message ? e.message : e));
+        els.status.textContent = "❌ Feil ved tilkobling.";
+      }
+    }
+
+    function clearCharts() {
+      charts.forEach(c => c.destroy());
+      charts = [];
+      els.chartsContainer.innerHTML = "";
+    }
+
+    function resetSelectors() {
+      els.psetSelect.innerHTML = '<option value="">(velg…)</option>';
+      els.psetSelect.disabled = true;
+
+      els.propSelect.innerHTML = '<option value="">(velg…)</option>';
+      els.propSelect.disabled = true;
+    }
+
+    function populatePropSelect(pset) {
+      els.propSelect.innerHTML = '<option value="">(velg…)</option>';
+      els.propSelect.disabled = true;
+
+      if (!pset || !availableProps[pset]) return;
+
+      const props = Array.from(availableProps[pset]).sort((a, b) => a.localeCompare(b, "nb"));
+      props.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p;
+        opt.textContent = p;
+        els.propSelect.appendChild(opt);
+      });
+      els.propSelect.disabled = false;
+
+      // Dersom det finnes en property som heter "MMI" så forhåndsvelges den
+      const mmiOption = Array.from(els.propSelect.options).find(o => o.value.toLowerCase() === "mmi");
+      if (mmiOption) {
+        els.propSelect.value = mmiOption.value;
+      }
+    }
+
+    async function scanProperties() {
+      if (!API) {
+        showError("API ikke klar. Vent et øyeblikk og prøv igjen.");
+        return;
+      }
+
+      clearCharts();
+      showError("");
+      availableProps = {};
+      resetSelectors();
+      els.loadButton.disabled = true;
+      els.colorizeButton.disabled = true;
+      els.resetButton.disabled = true;
+
+      els.status.textContent = "🔍 Skanner modell for Property Sets og MMI-egenskaper…";
+      setBusy(true);
+
+      try {
+        const models = await API.viewer.getObjects();
+        if (!models || !models.length) {
+          els.status.textContent = "ℹ️ Fant ingen objekter i visningen. Sørg for at modell(er) er innlastet.";
+          setBusy(false);
+          return;
+        }
+
+        for (const m of models) {
+          const modelId = m.modelId || m.modelid || m["model Id"];
+          const objs = m.objects || [];
+          if (!modelId || !objs.length) continue;
+
+          const runtimeIds = objs.map(o => o.id);
+          if (!runtimeIds.length) continue;
+
+          const objProps = await API.viewer.getObjectProperties(modelId, runtimeIds);
+          for (const obj of objProps || []) {
+            for (const pset of obj.properties || []) {
+              const name = pset.name || "";
+              if (!name) continue;
+              if (!availableProps[name]) availableProps[name] = new Set();
+              for (const p of pset.properties || []) {
+                if (p.name) availableProps[name].add(p.name);
+              }
+            }
+          }
+        }
+
+        // Fyll Property Set-listen
+        const psetNames = Object.keys(availableProps);
+        if (!psetNames.length) {
+          els.status.textContent = "ℹ️ Ingen Property Sets funnet på objektene i visningen.";
+          resetSelectors();
+        } else {
+          psetNames.sort((a, b) => a.localeCompare(b, "nb")).forEach(n => {
+            const opt = document.createElement("option");
+            opt.value = n;
+            opt.textContent = n;
+            els.psetSelect.appendChild(opt);
+          });
+          els.psetSelect.disabled = true;
+          els.propSelect.disabled = true;
+
+          // Hvis det finnes et pset som inneholder "MMI" i navnet, velg det automatisk
+          const autoPset = psetNames.find(n => n.toLowerCase().includes("mmi"));
+          if (autoPset) {
+            els.psetSelect.value = autoPset;
+            populatePropSelect(autoPset);
+          } else {
+            els.psetSelect.disabled = false;
+          }
+
+          els.status.textContent =
+            "✅ Ferdig skannet – velg MMI Property Set og MMI property (som regel «MMI»).";
+          els.loadButton.disabled = false;
+        }
+      } catch (e) {
+        showError("Feil under skanning av egenskaper: " + (e && e.message ? e.message : e));
+        els.status.textContent = "❌ Klarte ikke å skanne egenskaper.";
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    // Hjelper: hent heltall (tresifret) MMI-kode fra verdi
+    function parseMMICode(rawValue) {
+      if (rawValue === null || rawValue === undefined) return null;
+      const str = String(rawValue).trim();
+      if (!str) return null;
+
+      // I henhold til veilederen skal MMI lagres som tre siffer, f.eks "200"
+      const match = str.match(/\d{3}/);
+      if (!match) return null;
+      return match[0];
+    }
+
+    // Hent MMI-data for valgt pset/property
+    async function getMMIData(psetName, propName) {
+      const countsByCode = {};
+      const selectionByCode = {};
+      let missingCount = 0;
+      const missingSelection = {};
+
+      const models = await API.viewer.getObjects();
+      if (!models || !models.length) {
+        return { countsByCode, selectionByCode, missingCount, missingSelection, total: 0 };
+      }
+
+      for (const m of models) {
+        const modelId = m.modelId || m.modelid || m["model Id"];
+        const objs = m.objects || [];
+        if (!modelId || !objs.length) continue;
+
+        const runtimeIds = objs.map(o => o.id);
+        if (!runtimeIds.length) continue;
+
+        const objProps = await API.viewer.getObjectProperties(modelId, runtimeIds);
+
+        for (const obj of objProps || []) {
+          let value = null;
+
+          for (const ps of obj.properties || []) {
+            if (ps.name !== psetName) continue;
+            for (const p of ps.properties || []) {
+              if (p.name === propName) {
+                value = p.value;
+                break;
+              }
+            }
+          }
+
+          const code = parseMMICode(value);
+
+          if (code) {
+            if (!countsByCode[code]) countsByCode[code] = 0;
+            countsByCode[code]++;
+
+            if (!selectionByCode[code]) selectionByCode[code] = {};
+            if (!selectionByCode[code][modelId]) selectionByCode[code][modelId] = [];
+            selectionByCode[code][modelId].push(obj.id);
+          } else {
+            missingCount++;
+            if (!missingSelection[modelId]) missingSelection[modelId] = [];
+            missingSelection[modelId].push(obj.id);
+          }
+        }
+      }
+
+      const total = Object.values(countsByCode).reduce((a, b) => a + b, 0) + missingCount;
+      return { countsByCode, selectionByCode, missingCount, missingSelection, total };
+    }
+
+    // Marker objekter i modellen for valgt MMI-kode
+    async function highlightMMICode(codeKey, selectionByCode, missingSelection) {
+      if (!API) return;
+
+      let perModel;
+      let labelText;
+
+      if (codeKey === "MISSING") {
+        perModel = missingSelection;
+        labelText = "uten/ugyldig MMI";
+      } else {
+        perModel = selectionByCode[codeKey] || {};
+        labelText = `MMI ${codeKey}`;
+      }
+
+      const modelObjectIds = [];
+      let totalObjects = 0;
+
+      for (const modelId in perModel) {
+        const ids = perModel[modelId];
+        if (ids && ids.length) {
+          modelObjectIds.push({ modelId, objectRuntimeIds: ids });
+          totalObjects += ids.length;
+        }
+      }
+
+      if (!modelObjectIds.length) {
+        els.status.textContent = `Ingen objekter ${labelText} å markere.`;
+        return;
+      }
+
+      try {
+        await API.viewer.setSelection({ modelObjectIds }, "replace");
+        els.status.textContent = `🔎 Markerte ${totalObjects} objekter (${labelText}) i modellen.`;
+      } catch (e) {
+        showError("Feil ved markering av objekter: " + (e && e.message ? e.message : e));
+      }
+    }
+
+    // Hjelper: konverter hex-farge til rgba-objekt for Trimble
+    function hexToRgba(hex) {
+      const clean = hex.replace("#", "");
+      const bigint = parseInt(clean, 16);
+      const r = (bigint >> 16) & 255;
+      const g = (bigint >> 8) & 255;
+      const b = bigint & 255;
+      return { r, g, b, a: 255 };
+    }
+
+    function createMMIPieChart(pset, prop, mmiData) {
+      const { countsByCode, selectionByCode, missingCount, missingSelection, total } = mmiData;
+
+      const card = document.createElement("div");
+      card.className = "chart-card";
+
+      const title = document.createElement("h3");
+      title.textContent = `MMI-fordeling – ${pset} / ${prop}`;
+      card.appendChild(title);
+
+      const canvas = document.createElement("canvas");
+      card.appendChild(canvas);
+
+      const summary = document.createElement("div");
+      summary.className = "chart-summary";
+
+      const distinctCodes = Object.keys(countsByCode).sort((a, b) => parseInt(a) - parseInt(b));
+
+      let summaryText = `Totalt ${total} objekter med/uten MMI.`;
+      if (distinctCodes.length) {
+        const list = distinctCodes.join(", ");
+        summaryText += ` Registrerte MMI-koder: ${list}.`;
+      }
+      if (missingCount) {
+        summaryText += ` Objekter uten/ugyldig MMI: ${missingCount}.`;
+      }
+      summary.textContent = summaryText;
+      card.appendChild(summary);
+
+      els.chartsContainer.appendChild(card);
+
+      const labels = [];
+      const data = [];
+      const colors = [];
+      const codeKeys = [];
+
+      distinctCodes.forEach(code => {
+        labels.push(`MMI ${code}`);
+        data.push(countsByCode[code]);
+        colors.push(MMI_COLORS[code] || "#CCCCCC");
+        codeKeys.push(code);
+      });
+
+      if (missingCount > 0) {
+        labels.push("Ingen / ugyldig MMI");
+        data.push(missingCount);
+        colors.push("#999999");
+        codeKeys.push("MISSING");
+      }
+
+      const chart = new Chart(canvas, {
+        type: "pie",
+        data: {
+          labels,
+          datasets: [{
+            data,
+            backgroundColor: colors,
+            borderColor: "#fff",
+            borderWidth: 4,
+            hoverOffset: 12
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: "bottom",
+              labels: {
+                font: { size: 14 },
+                padding: 20,
+                usePointStyle: true
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  const v = ctx.parsed;
+                  const pct = total ? (v / total * 100).toFixed(1) : 0;
+                  return `${ctx.label}: ${pct}% (${v} objekter)`;
+                }
+              }
+            },
+            datalabels: {
+              formatter: value => {
+                const pct = total ? (value / total * 100).toFixed(1) : 0;
+                return `${pct} %`;
+              },
+              color: "#fff",
+              font: {
+                weight: "bold",
+                size: 13
+              },
+              anchor: "center",
+              align: "center",
+              clamp: true,
+              clip: false
+            }
+          },
+          animation: {
+            animateRotate: true,
+            duration: 900
+          },
+          // Klikk på kakestykke → marker objekter med aktuell MMI-kode
+          onClick: (event, elements) => {
+            if (!elements || !elements.length) return;
+            const index = elements[0].index;
+            const codeKey = codeKeys[index];
+            highlightMMICode(codeKey, selectionByCode, missingSelection);
+          }
+        }
+      });
+
+      charts.push(chart);
+
+      // Oppdater global MMI-selection for fargelegging
+      mmiSelectionGlobal = { selectionByCode, missingSelection };
+    }
+
+    async function loadMMIChart() {
+      if (!API) {
+        showError("API ikke klar. Vent et øyeblikk og prøv igjen.");
+        return;
+      }
+
+      clearCharts();
+      showError("");
+
+      const pset = els.psetSelect.value;
+      const prop = els.propSelect.value;
+
+      if (!pset) {
+        showError("Velg MMI Property Set først.");
+        return;
+      }
+      if (!prop) {
+        showError("Velg MMI property (f.eks. «MMI»).");
+        return;
+      }
+
+      els.status.textContent = "📈 Leser MMI-verdier og bygger kakediagram…";
+      els.colorizeButton.disabled = true;
+      els.resetButton.disabled = true;
+      setBusy(true);
+
+      try {
+        const mmiData = await getMMIData(pset, prop);
+        if (mmiData.total === 0) {
+          els.status.textContent = "Ingen objekter med valgt MMI-egenskap funnet.";
+          return;
+        }
+        createMMIPieChart(pset, prop, mmiData);
+
+        els.status.textContent =
+          "✅ MMI-kakediagram er klart! Klikk på et kakestykke for å markere objekter med valgt MMI-kode.";
+        els.colorizeButton.disabled = false;
+        els.resetButton.disabled = false;
+      } catch (e) {
+        showError("Feil ved henting av MMI-data: " + (e && e.message ? e.message : e));
+        els.status.textContent = "❌ Klarte ikke å generere MMI-kakediagram.";
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function colorizeAllMMI() {
+      if (!API) return;
+
+      const { selectionByCode, missingSelection } = mmiSelectionGlobal;
+      const codes = Object.keys(selectionByCode || {});
+
+      if (!codes.length && (!missingSelection || !Object.keys(missingSelection).length)) {
+        showError("Ingen MMI-data å fargelegge. Hent MMI-fordeling først.");
+        return;
+      }
+
+      showError("");
+      els.status.textContent = "🎨 Fargelegger objekter etter MMI-kode…";
+      setBusy(true);
+
+      try {
+        await API.viewer.setObjectState(undefined, { color: "reset" });
+
+        // Fargelegg hver MMI-kode med sin farge
+        for (const code of codes) {
+          const perModel = selectionByCode[code];
+          const modelObjectIds = [];
+
+          for (const modelId in perModel) {
+            const ids = perModel[modelId];
+            if (ids && ids.length) {
+              modelObjectIds.push({ modelId, objectRuntimeIds: ids });
+            }
+          }
+
+          if (!modelObjectIds.length) continue;
+
+          const hex = MMI_COLORS[code] || "#CCCCCC";
+          const rgba = hexToRgba(hex);
+
+          await API.viewer.setObjectState({ modelObjectIds }, { color: rgba });
+        }
+
+        // Objekter uten MMI → grå
+        const missingModelIds = Object.keys(missingSelection || {});
+        if (missingModelIds.length) {
+          const modelObjectIds = [];
+          for (const modelId of missingModelIds) {
+            const ids = missingSelection[modelId];
+            if (ids && ids.length) {
+              modelObjectIds.push({ modelId, objectRuntimeIds: ids });
+            }
+          }
+          if (modelObjectIds.length) {
+            const rgba = hexToRgba("#999999");
+            await API.viewer.setObjectState({ modelObjectIds }, { color: rgba });
+          }
+        }
+
+        els.status.textContent =
+          "🎨 Fargelegging fullført: objekter er fargelagt etter MMI-kode iht. MMI-veilederen 2.0.";
+        els.resetButton.disabled = false;
+      } catch (e) {
+        showError("Feil ved fargelegging: " + (e && e.message ? e.message : e));
+        els.status.textContent = "❌ Klarte ikke å fargelegge objekter.";
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function resetAll() {
+      if (!API) return;
+
+      setBusy(true);
+      showError("");
+      clearCharts();
+
+      try {
+        await API.viewer.setObjectState(undefined, { color: "reset" });
+        els.status.textContent =
+          "🔄 Modellen er tilbakestilt til originalfarger. Du kan hente MMI-fordeling på nytt ved behov.";
+      } catch (e) {
+        showError("Feil ved tilbakestilling av modellfarger: " + (e && e.message ? e.message : e));
+        els.status.textContent = "❌ Klarte ikke å tilbakestille modellfarger.";
+      } finally {
+        els.colorizeButton.disabled = true;
+        els.resetButton.disabled = true;
+        els.loadButton.disabled = false;
+        setBusy(false);
+      }
+    }
+
+    // Events
+    els.scanButton.onclick = scanProperties;
+    els.loadButton.onclick = loadMMIChart;
+    els.colorizeButton.onclick = colorizeAllMMI;
+    els.resetButton.onclick = resetAll;
+
+    els.psetSelect.onchange = e => {
+      clearCharts();
+      showError("");
+      populatePropSelect(e.target.value);
+      els.colorizeButton.disabled = true;
+      els.resetButton.disabled = true;
+    };
+
+    // Start
+    connect();
+  </script>
+</body>
+</html>
