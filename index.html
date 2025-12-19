@@ -2,7 +2,7 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>MMI-fordeling</title>
+  <title>MMIXtractor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- Trimble Connect Workspace API -->
@@ -263,13 +263,13 @@
            alt="Norconsult logo" class="logo">
 
       <div class="title-block">
-        <h1 class="title">MMI-fordeling</h1>
+        <h1 class="title">MMIXtractor</h1>
         <div class="org">Norconsult Norge</div>
         <div class="dev">Developed by Edin Dzakmic, Norconsult, (AI-assisted development)</div>
       </div>
     </div>
 
-    <span class="subtitle">MMI-fordeling direkte i modellen</span>
+    <span class="subtitle">MMIXtractor direkte i modellen</span>
 
     <div class="selector-row">
       <label>
@@ -289,7 +289,7 @@
 
     <div class="button-row">
       <button id="scanButton" disabled>🔄 Oppdater liste</button>
-      <button id="loadButton" disabled>📊 Hent MMI-fordeling</button>
+      <button id="loadButton" disabled>📊 Hent MMIXtractorg</button>
       <button id="colorizeButton" disabled>🎨 Fargelegg etter MMI</button>
       <button id="resetButton" disabled>🔄 Tilbakestill farger</button>
     </div>
@@ -632,7 +632,7 @@
       card.className = "chart-card";
 
       const title = document.createElement("h3");
-      title.textContent = `MMI-fordeling – ${pset} / ${prop}`;
+      title.textContent = `MMIXtractor – ${pset} / ${prop}`;
       card.appendChild(title);
 
       const canvas = document.createElement("canvas");
@@ -796,7 +796,7 @@
       const codes = Object.keys(selectionByCode || {});
 
       if (!codes.length && (!missingSelection || !Object.keys(missingSelection).length)) {
-        showError("Ingen MMI-data å fargelegge. Hent MMI-fordeling først.");
+        showError("Ingen MMI-data å fargelegge. Hent MMIXtractor først.");
         return;
       }
 
@@ -864,7 +864,7 @@
       try {
         await API.viewer.setObjectState(undefined, { color: "reset" });
         els.status.textContent =
-          "🔄 Modellen er tilbakestilt til originalfarger. Du kan hente MMI-fordeling på nytt ved behov.";
+          "🔄 Modellen er tilbakestilt til originalfarger. Du kan hente MMIXtractor på nytt ved behov.";
       } catch (e) {
         showError("Feil ved tilbakestilling av modellfarger: " + (e && e.message ? e.message : e));
         els.status.textContent = "❌ Klarte ikke å tilbakestille modellfarger.";
@@ -895,5 +895,6 @@
   </script>
 </body>
 </html>
+
 
 
