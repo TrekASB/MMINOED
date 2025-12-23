@@ -99,7 +99,7 @@
   <div class="footer-credit">
     MMI-oversikt basert på MMI-veilederen 2.0.<br>
     Filtrer bort: <b>IFCPROJECT</b> / <b>IFCSITE</b> / <b>IFCBUILDING</b> / <b>IFCBUILDINGSTOREY</b>.<br>
-    Klikk på et kakestykke for å markere objekter i modellen.
+    Du velger <b>Property Set</b>; vi auto-velger en <b>MMI property</b> innenfor valgt set.
   </div>
 </main>
 
@@ -153,93 +153,10 @@
     return false;
   }
 
-  async function connect(){
-    try{
-      API=await TrimbleConnectWorkspace.connect(window.parent, ()=>{}, 30000);
-      els.status.textContent="✅ Tilkoblet – trykk «Oppdater liste» for å hente MMI-egenskaper.";
-      els.scanButton.disabled=false;
-    }catch(e){
-      showError("Kunne ikke koble til Trimble Connect: " + (e?.message||e));
-      els.status.textContent="❌ Feil ved tilkobling.";
-    }
-  }
-
   function clearCharts(){ charts.forEach(c=>c.destroy()); charts=[]; els.chartsContainer.innerHTML=""; }
   function resetSelectors(){
     els.psetSelect.innerHTML='<option value="">(velg…)</option>'; els.psetSelect.disabled=true;
     els.propSelect.innerHTML='<option value="">(velg…)</option>'; els.propSelect.disabled=true;
-  }
-
-  function populatePropSelect(pset){
-    els.propSelect.innerHTML='<option value="">(velg…)</option>'; els.propSelect.disabled=true;
-    if(!pset || !availableProps[pset]) return;
-    const props=Array.from(availableProps[pset]).sort((a,b)=>a.localeCompare(b,"nb"));
-    props.forEach(p=>{ const o=document.createElement("option"); o.value=p; o.textContent=p; els.propSelect.appendChild(o); });
-    els.propSelect.disabled=false;
-    const mmiOpt=Array.from(els.propSelect.options).find(o=>o.value.toLowerCase()==="mmi");
-    if(mmiOpt) els.propSelect.value=mmiOpt.value;
-  }
-
-  async function scanProperties(){
-    if(!API){ showError("API ikke klar. Vent litt og prøv igjen."); return; }
-
-    clearCharts(); showError(""); availableProps={}; resetSelectors();
-    els.loadButton.disabled=true; els.colorizeButton.disabled=true; els.resetButton.disabled=true;
-
-    els.status.textContent="🔍 Skanner modell for Property Sets (filtrerer bort topp-IFC)…";
-    setBusy(true);
-
-    try{
-      const models=await API.viewer.getObjects();
-      if(!models?.length){ els.status.textContent="ℹ️ Fant ingen objekter i visningen."; return; }
-
-      for(const m of models){
-        const modelId=m.modelId||m.modelid||m["model Id"];
-        const objs=m.objects||[];
-        if(!modelId||!objs.length) continue;
-
-        const rids=Array.from(new Set(objs.map(o=>Number(o.id)).filter(Number.isFinite)));
-        const propsArr=await API.viewer.getObjectProperties(modelId, rids);
-
-        for(let i=0;i<rids.length;i++){
-          const objProps=propsArr?.[i];
-          if(!objProps) continue;
-          if(isIgnored(objProps)) continue;
-
-          for(const pset of (objProps.properties||[])){
-            const name=pset.name||"";
-            if(!name) continue;
-            if(!availableProps[name]) availableProps[name]=new Set();
-            for(const p of (pset.properties||[])){
-              const pn=p?.name;
-              if(pn) availableProps[name].add(pn);
-            }
-          }
-        }
-      }
-
-      const psetNames=Object.keys(availableProps);
-      if(!psetNames.length){ els.status.textContent="ℹ️ Ingen Property Sets funnet (etter filtrering)."; return; }
-
-      psetNames.sort((a,b)=>a.localeCompare(b,"nb")).forEach(n=>{
-        const opt=document.createElement("option"); opt.value=n; opt.textContent=n; els.psetSelect.appendChild(opt);
-      });
-
-      els.psetSelect.disabled=false;
-
-      const autoPset =
-        psetNames.find(n=>n.toLowerCase().includes("mmi")) ||
-        psetNames.find(n=>n === "0_Generell") ||
-        psetNames.find(n=>n.toLowerCase().includes("generell"));
-
-      if(autoPset){ els.psetSelect.value=autoPset; populatePropSelect(autoPset); }
-
-      els.status.textContent="✅ Ferdig skannet. Velg MMI Property Set og MMI property.";
-      els.loadButton.disabled=false;
-    }catch(e){
-      showError("Feil under skanning: " + (e?.message||e));
-      els.status.textContent="❌ Klarte ikke å skanne.";
-    }finally{ setBusy(false); }
   }
 
   // --- Robust parsing / kategorier ---
@@ -266,69 +183,144 @@
   function keyLabel(key){ if(key==="HOLD") return "HOLD"; if(key==="--") return "--"; if(key==="EMPTY") return "Tom / ingen MMI"; return `MMI ${key}`; }
   function keyColor(key){ return MMI_COLORS[key] || EXTRA_COLORS[key] || "#cccccc"; }
 
-  // ✅ NYTT: finn MMI i valgt pset/property, men fall tilbake til typiske MMI-felt
-  // Dette er den viktigste fixen.
-  const MMI_PROP_CANDIDATES = [
-    "MMI",
-    "01_MMI",
-    "MMI_AVINOR",
-    "MMI (AVINOR)",
-    "MMI CODE"
-  ];
+  // ✅ Auto-velg MMI-property INNEFOR valgt pset
+  const MMI_PROP_PRIORITY = ["MMI", "01_MMI", "MMI_AVINOR"];
+  function pickBestMMIPropertyFromList(props){
+    if(!props?.length) return "";
+    const lower = props.map(p => ({ p, l: p.toLowerCase() }));
 
-  function propNameMatch(pn, target){
-    const a = norm(pn).toLowerCase();
-    const b = norm(target).toLowerCase();
-    return a === b;
+    // 1) eksakte treff i prioritert rekkefølge
+    for (const cand of MMI_PROP_PRIORITY){
+      const hit = lower.find(x => x.l === cand.toLowerCase());
+      if(hit) return hit.p;
+    }
+    // 2) noe som inneholder "mmi"
+    const contains = lower.find(x => x.l.includes("mmi"));
+    if(contains) return contains.p;
+
+    // 3) ingenting - la bruker velge
+    return "";
   }
 
-  function looksLikeMMIValue(v){
-    const k = parseMMIKey(v);
-    return k !== "EMPTY"; // HOLD/--/3-siffer regnes som "finnes"
+  function populatePropSelect(pset){
+    els.propSelect.innerHTML='<option value="">(velg…)</option>';
+    els.propSelect.disabled=true;
+
+    if(!pset || !availableProps[pset]) return;
+
+    const props = Array.from(availableProps[pset]).sort((a,b)=>a.localeCompare(b,"nb"));
+    props.forEach(p=>{
+      const opt=document.createElement("option");
+      opt.value=p; opt.textContent=p;
+      els.propSelect.appendChild(opt);
+    });
+
+    els.propSelect.disabled=false;
+
+    // auto-velg MMI property innenfor valgt pset (men bruker kan overstyre)
+    const autoProp = pickBestMMIPropertyFromList(props);
+    if(autoProp){
+      els.propSelect.value = autoProp;
+      els.status.textContent = `✅ Auto-valgte MMI property: «${autoProp}» i «${pset}». (Du kan endre manuelt)`;
+    } else {
+      els.status.textContent = `ℹ️ Fant ingen tydelig MMI-property i «${pset}». Velg property manuelt.`;
+    }
   }
 
-  function findMMIValue(objProps, chosenPset, chosenProp){
-    // 1) exact: valgt pset + valgt prop
+  async function connect(){
+    try{
+      API=await TrimbleConnectWorkspace.connect(window.parent, ()=>{}, 30000);
+      els.status.textContent="✅ Tilkoblet – trykk «Oppdater liste» for å hente MMI-egenskaper.";
+      els.scanButton.disabled=false;
+    }catch(e){
+      showError("Kunne ikke koble til Trimble Connect: " + (e?.message||e));
+      els.status.textContent="❌ Feil ved tilkobling.";
+    }
+  }
+
+  async function scanProperties(){
+    if(!API){ showError("API ikke klar. Vent litt og prøv igjen."); return; }
+
+    clearCharts(); showError(""); availableProps={}; resetSelectors();
+    els.loadButton.disabled=true; els.colorizeButton.disabled=true; els.resetButton.disabled=true;
+
+    els.status.textContent="🔍 Skanner modell for Property Sets (filtrerer bort topp-IFC)…";
+    setBusy(true);
+
+    try{
+      const models=await API.viewer.getObjects();
+      if(!models?.length){ els.status.textContent="ℹ️ Fant ingen objekter i visningen."; return; }
+
+      for(const m of models){
+        const modelId=m.modelId||m.modelid||m["model Id"];
+        const objs=m.objects||[];
+        if(!modelId||!objs.length) continue;
+
+        const rids=Array.from(new Set(objs.map(o=>Number(o.id)).filter(Number.isFinite)));
+        if(!rids.length) continue;
+
+        const propsArr=await API.viewer.getObjectProperties(modelId, rids);
+
+        for(let i=0;i<rids.length;i++){
+          const objProps=propsArr?.[i];
+          if(!objProps) continue;
+          if(isIgnored(objProps)) continue;
+
+          for(const pset of (objProps.properties||[])){
+            const name=pset.name||"";
+            if(!name) continue;
+            if(!availableProps[name]) availableProps[name]=new Set();
+            for(const p of (pset.properties||[])){
+              const pn=p?.name;
+              if(pn) availableProps[name].add(pn);
+            }
+          }
+        }
+      }
+
+      const psetNames=Object.keys(availableProps);
+      if(!psetNames.length){ els.status.textContent="ℹ️ Ingen Property Sets funnet (etter filtrering)."; return; }
+
+      psetNames.sort((a,b)=>a.localeCompare(b,"nb")).forEach(n=>{
+        const opt=document.createElement("option"); opt.value=n; opt.textContent=n;
+        els.psetSelect.appendChild(opt);
+      });
+
+      els.psetSelect.disabled=false;
+
+      // foreslå pset som inneholder mmi i navnet, men brukeren kan endre
+      const autoPset =
+        psetNames.find(n=>n.toLowerCase().includes("mmi")) ||
+        psetNames.find(n=>n === "0_Generell");
+
+      if(autoPset){
+        els.psetSelect.value = autoPset;
+        populatePropSelect(autoPset);
+      } else {
+        els.status.textContent="✅ Ferdig skannet. Velg MMI Property Set.";
+      }
+
+      els.loadButton.disabled=false;
+    }catch(e){
+      showError("Feil under skanning: " + (e?.message||e));
+      els.status.textContent="❌ Klarte ikke å skanne.";
+    }finally{ setBusy(false); }
+  }
+
+  // ✅ Finn MMI-verdien KUN i valgt pset + valgt property (ingen fallback på andre pset)
+  function findValueInChosenPset(objProps, chosenPset, chosenProp){
     for(const ps of (objProps?.properties||[])){
       if(norm(ps?.name) !== norm(chosenPset)) continue;
       for(const p of (ps?.properties||[])){
-        if(norm(p?.name) === norm(chosenProp)) return { value: p?.value, source: "chosen" };
+        if(norm(p?.name) === norm(chosenProp)) return p?.value;
       }
     }
-
-    // 2) exact: hvilken som helst pset, property-navn matcher valgt prop (case-insensitiv)
-    if (chosenProp){
-      for(const ps of (objProps?.properties||[])){
-        for(const p of (ps?.properties||[])){
-          if(propNameMatch(p?.name, chosenProp) && (p?.value!==undefined)) return { value: p?.value, source: "prop-any-pset" };
-        }
-      }
-    }
-
-    // 3) fallback: typiske MMI-properties (MMI / 01_MMI osv.)
-    for(const ps of (objProps?.properties||[])){
-      for(const p of (ps?.properties||[])){
-        const pn = norm(p?.name);
-        if(!pn) continue;
-
-        const pnLow = pn.toLowerCase();
-        const isCandidate =
-          MMI_PROP_CANDIDATES.some(c => pnLow === c.toLowerCase()) ||
-          pnLow.includes("mmi");
-
-        if(!isCandidate) continue;
-
-        // vi godtar bare hvis verdien ser ut som MMI (3-siffer, HOLD eller dash)
-        if(looksLikeMMIValue(p?.value)) return { value: p?.value, source: `fallback:${ps?.name||"?"}.${pn}` };
-      }
-    }
-
-    return { value: null, source: "none" };
+    return null;
   }
 
-  async function getMMIData(psetName, propName){
+  async function getMMIData(chosenPset, chosenProp){
     const countsByKey={}, selectionByKey={};
-    let foundChosen=0, foundFallback=0, foundNone=0;
+    let missingPset=0, missingProp=0, ok=0;
 
     const models=await API.viewer.getObjects();
     if(!models?.length) return { countsByKey, selectionByKey:{}, total:0, dbg:"Ingen modeller." };
@@ -349,13 +341,14 @@
         if(!objProps) continue;
         if(isIgnored(objProps)) continue;
 
-        const found = findMMIValue(objProps, psetName, propName);
-        if(found.source==="chosen" || found.source==="prop-any-pset") foundChosen++;
-        else if(found.source.startsWith("fallback:")) foundFallback++;
-        else foundNone++;
+        const hasPset = (objProps.properties || []).some(ps => norm(ps?.name) === norm(chosenPset));
+        if(!hasPset) missingPset++;
 
-        const key=parseMMIKey(found.value);
+        const val = findValueInChosenPset(objProps, chosenPset, chosenProp);
+        if(val === null && hasPset) missingProp++;
+        else if(val !== null) ok++;
 
+        const key=parseMMIKey(val);
         countsByKey[key]=(countsByKey[key]||0)+1;
 
         if(!selectionByKey[key]) selectionByKey[key]={};
@@ -365,9 +358,12 @@
     }
 
     const total=Object.values(countsByKey).reduce((a,b)=>a+b,0);
-    const dbg = `Funnet via valgt felt: ${foundChosen}
-Funnet via fallback (MMI/01_MMI/etc): ${foundFallback}
-Tom/ingen: ${foundNone}`;
+    const dbg =
+`Valgt pset: ${chosenPset}
+Valgt prop: ${chosenProp}
+Objekter uten pset: ${missingPset}
+Objekter med pset men uten prop/verdi: ${missingProp}
+Objekter med prop/verdi: ${ok}`;
     return { countsByKey, selectionByKey, total, dbg };
   }
 
@@ -454,12 +450,14 @@ Tom/ingen: ${foundNone}`;
 
   async function loadMMIChart(){
     clearCharts(); showError("");
+
     const pset=els.psetSelect.value;
     const prop=els.propSelect.value;
-    if(!pset){ showError("Velg MMI Property Set først."); return; }
-    if(!prop){ showError("Velg MMI property (f.eks. «MMI»)."); return; }
 
-    els.status.textContent="📈 Leser MMI-verdier og bygger kakediagram…";
+    if(!pset){ showError("Velg MMI Property Set først."); return; }
+    if(!prop){ showError("Velg MMI property (auto-velg forsøkes, ellers velg manuelt)."); return; }
+
+    els.status.textContent="📈 Leser MMI-verdier i valgt Property Set…";
     els.colorizeButton.disabled=true; els.resetButton.disabled=true;
     setBusy(true);
 
@@ -467,7 +465,7 @@ Tom/ingen: ${foundNone}`;
       const mmiData=await getMMIData(pset, prop);
       if(!mmiData.total){ els.status.textContent="Ingen objekter funnet (etter filtrering)."; return; }
       createPie(pset, prop, mmiData);
-      els.status.textContent="✅ Klar! Tom/ingen MMI er nå kun objekter uten MMI i noen pset/property.";
+      els.status.textContent="✅ Klar! Tom/ingen MMI gjelder nå kun valgt pset + valgt property.";
       els.colorizeButton.disabled=false; els.resetButton.disabled=false;
     }catch(e){
       showError("Feil ved henting av MMI-data: " + (e?.message||e));
@@ -494,7 +492,6 @@ Tom/ingen: ${foundNone}`;
           if(ids?.length) modelObjectIds.push({ modelId, objectRuntimeIds: ids });
         }
         if(!modelObjectIds.length) continue;
-
         await API.viewer.setObjectState({ modelObjectIds }, { color: hexToRgba(keyColor(key)) });
       }
 
@@ -520,6 +517,7 @@ Tom/ingen: ${foundNone}`;
     }
   }
 
+  // wiring
   els.scanButton.onclick=scanProperties;
   els.loadButton.onclick=loadMMIChart;
   els.colorizeButton.onclick=colorizeAllMMI;
@@ -528,6 +526,13 @@ Tom/ingen: ${foundNone}`;
   els.psetSelect.onchange = e => {
     clearCharts(); showError("");
     populatePropSelect(e.target.value);
+    els.colorizeButton.disabled=true;
+    els.resetButton.disabled=true;
+  };
+
+  // hvis du bytter property manuelt, nullstiller vi charts
+  els.propSelect.onchange = () => {
+    clearCharts(); showError("");
     els.colorizeButton.disabled=true;
     els.resetButton.disabled=true;
   };
