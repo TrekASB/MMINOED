@@ -2,7 +2,7 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>MMIXtractor</title>
+  <title>aaMMIXtractor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
@@ -67,13 +67,13 @@
   <div class="title-container">
     <img src="norconsult-logo-black.png" alt="Norconsult logo" class="logo">
     <div class="title-block">
-      <h1 class="title">MMIXtractor</h1>
+      <h1 class="title">aaMMIXtractor</h1>
       <div class="org">Norconsult Norge</div>
       <div class="dev">Developed by Edin Dzakmic, Norconsult, (AI-assisted development)</div>
     </div>
   </div>
 
-  <span class="subtitle">MMIXtractor direkte i modellen</span>
+  <span class="subtitle">aaMMIXtractor direkte i modellen</span>
 
   <div class="selector-row">
     <label>MMI Property Set:
@@ -86,7 +86,7 @@
 
   <div class="button-row">
     <button id="scanButton" disabled>🔄 Oppdater liste</button>
-    <button id="loadButton" disabled>📊 Hent MMIXtractor</button>
+    <button id="loadButton" disabled>📊 Hent aaMMIXtractor</button>
     <button id="colorizeButton" disabled>🎨 Fargelegg etter MMI</button>
     <button id="resetButton" disabled>🔄 Tilbakestill farger</button>
   </div>
@@ -394,7 +394,7 @@ Objekter med prop/verdi: ${ok}`;
     const card=document.createElement("div");
     card.className="chart-card";
     const h=document.createElement("h3");
-    h.textContent=`MMIXtractor – ${pset} / ${prop}`;
+    h.textContent=`aaMMIXtractor – ${pset} / ${prop}`;
     card.appendChild(h);
 
     const canvas=document.createElement("canvas");
@@ -476,7 +476,7 @@ Objekter med prop/verdi: ${ok}`;
   async function colorizeAllMMI(){
     const selectionByKey=mmiSelectionGlobal.selectionByKey||{};
     const keys=Object.keys(selectionByKey);
-    if(!keys.length){ showError("Ingen MMI-data å fargelegge. Hent MMIXtractor først."); return; }
+    if(!keys.length){ showError("Ingen MMI-data å fargelegge. Hent aaMMIXtractor først."); return; }
 
     showError(""); els.status.textContent="🎨 Fargelegger objekter etter MMI-kategori…";
     setBusy(true);
@@ -541,3 +541,4 @@ Objekter med prop/verdi: ${ok}`;
 </script>
 </body>
 </html>
+
