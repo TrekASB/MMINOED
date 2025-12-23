@@ -2,10 +2,13 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>EDMMIXtractorr</title>
+  <title>MMIXtractor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
+  <!-- Trimble Connect Workspace API -->
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
+
+  <!-- Chart.js + datalabels -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
 
@@ -31,7 +34,7 @@
     .subtitle{font-size:14px;color:var(--gray);font-style:italic;margin-left:auto;white-space:nowrap;}
     label{font-weight:600;display:flex;align-items:center;gap:8px;font-size:14px;white-space:nowrap;}
     select,button{padding:10px 16px;border-radius:8px;border:1px solid var(--border);font-size:14px;transition:all .2s ease;}
-    select{background:#fff;min-width:200px;max-width:320px;}
+    select{background:#fff;min-width:200px;max-width:340px;}
     select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,105,217,.15);outline:none;}
     button{background:var(--primary);color:#fff;border:none;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:6px;white-space:nowrap;}
     button:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 8px rgba(0,0,0,.15);}
@@ -66,13 +69,13 @@
   <div class="title-container">
     <img src="norconsult-logo-black.png" alt="Norconsult logo" class="logo">
     <div class="title-block">
-      <h1 class="title">r</h1>
+      <h1 class="title">MMIXtractor</h1>
       <div class="org">Norconsult Norge</div>
       <div class="dev">Developed by Edin Dzakmic, Norconsult, (AI-assisted development)</div>
     </div>
   </div>
 
-  <span class="subtitle">r direkte i modellen</span>
+  <span class="subtitle">MMIXtractor direkte i modellen</span>
 
   <div class="selector-row">
     <label>MMI Property Set:
@@ -85,7 +88,7 @@
 
   <div class="button-row">
     <button id="scanButton" disabled>🔄 Oppdater liste</button>
-    <button id="loadButton" disabled>📊 Hent r</button>
+    <button id="loadButton" disabled>📊 Hent MMIXtractor</button>
     <button id="colorizeButton" disabled>🎨 Fargelegg etter MMI</button>
     <button id="resetButton" disabled>🔄 Tilbakestill farger</button>
   </div>
@@ -97,14 +100,16 @@
   <div id="chartsContainer"></div>
   <div class="footer-credit">
     Kakestykket teller <b>kun objekter i 3D-viewer</b> og <b>kun modeller som er synlige (ON i Models)</b>.<br>
-    Filtrer bort: <b>IFCPROJECT</b> / <b>IFCSITE</b> / <b>IFCBUILDING</b> / <b>IFCBUILDINGSTOREY</b>.
+    Ved MMI-lesing filtreres bort: <b>IFCPROJECT</b> / <b>IFCSITE</b> / <b>IFCBUILDING</b> / <b>IFCBUILDINGSTOREY</b>.
   </div>
 </main>
 
 <script>
   let API=null, availableProps={}, charts=[];
-  const IGNORE_TYPES=new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
   let mmiSelectionGlobal={selectionByKey:{}};
+
+  // ✅ Filtrer bort topp-IFC på objektnivå
+  const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
 
   if (window.ChartDataLabels) Chart.register(ChartDataLabels);
 
@@ -139,15 +144,19 @@
     });
   }
 
+  // ✅ IFC-type deteksjon + fallback på navn
   function getIfcType(objProps){
-    const direct=norm(objProps?.ifcType||objProps?.ifcEntity||objProps?.entityType||objProps?.type);
+    const direct = norm(objProps?.ifcType || objProps?.ifcEntity || objProps?.entityType || objProps?.type);
     return direct ? direct.toUpperCase() : "";
   }
   function isIgnored(objProps){
-    const t=getIfcType(objProps);
+    const t = getIfcType(objProps);
     if (t && IGNORE_TYPES.has(t)) return true;
-    const n=norm(objProps?.name||objProps?.objectName||objProps?.displayName).toUpperCase();
-    for (const it of IGNORE_TYPES){ if(n===it || n.includes(it)) return true; }
+
+    const n = norm(objProps?.name || objProps?.objectName || objProps?.displayName).toUpperCase();
+    for (const it of IGNORE_TYPES){
+      if (n === it || n.includes(it)) return true;
+    }
     return false;
   }
 
@@ -207,7 +216,7 @@
     }
   }
 
-  // ✅ NØKKEL: hent kun modeller som er synlige (ON i Models)
+  // ✅ hent kun modeller som er synlige (ON i Models)
   async function getVisibleModelIdsFromViewer(loadedModels){
     const ids = loadedModels.map(m => m.modelId || m.modelid || m["model Id"]).filter(Boolean);
 
@@ -220,13 +229,12 @@
             x &&
             (x.visible === true || x.isVisible === true || x.visibility === true || x.hidden === false)
           ).map(x => x.id || x.modelId || x.modelid).filter(Boolean);
-
           if (visible.length) return new Set(visible);
         }
       }
     }catch(e){ /* ignore */ }
 
-    // Strategi B: getModelState / getModelStates
+    // Strategi B: getModelStates
     try{
       if (typeof API.viewer.getModelStates === "function"){
         const states = await API.viewer.getModelStates(ids);
@@ -251,7 +259,7 @@
       }
     }catch(e){ /* ignore */ }
 
-    // Fallback: vi klarer ikke å lese synlighet -> bruk alt lastet
+    // Fallback: bruk alt lastet
     els.status.textContent =
       "⚠️ Klarte ikke å lese modell-synlighet fra API. Teller alle lastede modeller i vieweren.";
     return new Set(ids);
@@ -267,7 +275,7 @@
     setBusy(true);
 
     try{
-      const loaded = await API.viewer.getObjects(); // lastet i viewer
+      const loaded = await API.viewer.getObjects();
       if(!loaded?.length){ els.status.textContent="ℹ️ Fant ingen objekter i visningen."; return; }
 
       const visibleSet = await getVisibleModelIdsFromViewer(loaded);
@@ -287,6 +295,8 @@
         for(let i=0;i<rids.length;i++){
           const objProps=propsArr?.[i];
           if(!objProps) continue;
+
+          // ✅ FILTRER topp-IFC også under scan
           if(isIgnored(objProps)) continue;
 
           for(const pset of (objProps.properties||[])){
@@ -365,10 +375,12 @@
         const rid=rids[i];
         const objProps=propsArr?.[i];
         if(!objProps) continue;
+
+        // ✅ FILTRER topp-IFC før MMI-lesing
         if(isIgnored(objProps)) continue;
 
         const val = findValueInChosenPset(objProps, chosenPset, chosenProp);
-        const key=parseMMIKey(val);
+        const key = parseMMIKey(val);
 
         countsByKey[key]=(countsByKey[key]||0)+1;
 
@@ -417,7 +429,7 @@ Valgt prop: ${chosenProp}`;
     const card=document.createElement("div");
     card.className="chart-card";
     const h=document.createElement("h3");
-    h.textContent=`EDMMIXtractor – ${pset} / ${prop}`;
+    h.textContent=`MMIXtractor – ${pset} / ${prop}`;
     card.appendChild(h);
 
     const canvas=document.createElement("canvas");
@@ -471,33 +483,10 @@ Valgt prop: ${chosenProp}`;
     mmiSelectionGlobal={ selectionByKey };
   }
 
-  async function loadMMIChart(){
-    clearCharts(); showError("");
-    const pset=els.psetSelect.value;
-    const prop=els.propSelect.value;
-    if(!pset){ showError("Velg MMI Property Set først."); return; }
-    if(!prop){ showError("Velg MMI property."); return; }
-
-    els.status.textContent="📈 Leser MMI-verdier (kun synlige modeller i 3D)…";
-    els.colorizeButton.disabled=true; els.resetButton.disabled=true;
-    setBusy(true);
-
-    try{
-      const mmiData=await getMMIData(pset, prop);
-      if(!mmiData.total){ els.status.textContent="Ingen objekter funnet (etter filtrering og synlighet)."; return; }
-      createPie(pset, prop, mmiData);
-      els.status.textContent="✅ Klar! Kakediagram = 1:1 med det som er synlig i 3D-viewer.";
-      els.colorizeButton.disabled=false; els.resetButton.disabled=false;
-    }catch(e){
-      showError("Feil ved henting av MMI-data: " + (e?.message||e));
-      els.status.textContent="❌ Klarte ikke å generere MMI-kakediagram.";
-    }finally{ setBusy(false); }
-  }
-
   async function colorizeAllMMI(){
     const selectionByKey=mmiSelectionGlobal.selectionByKey||{};
     const keys=Object.keys(selectionByKey);
-    if(!keys.length){ showError("Ingen MMI-data å fargelegge. Hent EDMMIXtractor først."); return; }
+    if(!keys.length){ showError("Ingen MMI-data å fargelegge. Hent MMIXtractor først."); return; }
 
     showError(""); els.status.textContent="🎨 Fargelegger objekter etter MMI-kategori…";
     setBusy(true);
@@ -538,6 +527,29 @@ Valgt prop: ${chosenProp}`;
     }
   }
 
+  async function loadMMIChart(){
+    clearCharts(); showError("");
+    const pset=els.psetSelect.value;
+    const prop=els.propSelect.value;
+    if(!pset){ showError("Velg MMI Property Set først."); return; }
+    if(!prop){ showError("Velg MMI property."); return; }
+
+    els.status.textContent="📈 Leser MMI-verdier (kun synlige modeller i 3D)…";
+    els.colorizeButton.disabled=true; els.resetButton.disabled=true;
+    setBusy(true);
+
+    try{
+      const mmiData=await getMMIData(pset, prop);
+      if(!mmiData.total){ els.status.textContent="Ingen objekter funnet (etter filtrering og synlighet)."; return; }
+      createPie(pset, prop, mmiData);
+      els.status.textContent="✅ Klar! Kakediagram = 1:1 med det som er synlig i 3D-viewer.";
+      els.colorizeButton.disabled=false; els.resetButton.disabled=false;
+    }catch(e){
+      showError("Feil ved henting av MMI-data: " + (e?.message||e));
+      els.status.textContent="❌ Klarte ikke å generere MMI-kakediagram.";
+    }finally{ setBusy(false); }
+  }
+
   async function connect(){
     try{
       API=await TrimbleConnectWorkspace.connect(window.parent, ()=>{}, 30000);
@@ -562,4 +574,3 @@ Valgt prop: ${chosenProp}`;
 </script>
 </body>
 </html>
-
