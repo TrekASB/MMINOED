@@ -2,7 +2,7 @@
 <html lang="nb">
 <head>
   <meta charset="UTF-8" />
-  <title>aaMMIXtractor</title>
+  <title>AAMMIXtractor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
@@ -29,10 +29,9 @@
     .org{font-size:15px;font-weight:600;color:var(--dark);margin-top:-4px;}
     .dev{font-size:12px;color:var(--gray);margin-top:-2px;font-style:italic;}
     .subtitle{font-size:14px;color:var(--gray);font-style:italic;margin-left:auto;white-space:nowrap;}
-
     label{font-weight:600;display:flex;align-items:center;gap:8px;font-size:14px;white-space:nowrap;}
     select,button{padding:10px 16px;border-radius:8px;border:1px solid var(--border);font-size:14px;transition:all .2s ease;}
-    select{background:#fff;min-width:180px;max-width:260px;}
+    select{background:#fff;min-width:200px;max-width:320px;}
     select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,105,217,.15);outline:none;}
     button{background:var(--primary);color:#fff;border:none;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:6px;white-space:nowrap;}
     button:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 8px rgba(0,0,0,.15);}
@@ -40,12 +39,12 @@
     button#resetButton{background:var(--danger);} button#resetButton:hover:not(:disabled){background:#c0392b;}
     button#colorizeButton{background:#00c2cb;} button#colorizeButton:hover:not(:disabled){background:#00a0aa;}
     button:disabled{background:var(--gray);cursor:not-allowed;transform:none;box-shadow:none;opacity:.85;}
-
     main{flex:1;padding:24px;overflow-y:auto;display:grid;gap:28px;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));justify-items:center;}
     .chart-card{background:#fff;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:28px 24px 22px;width:100%;max-width:550px;text-align:center;position:relative;overflow:hidden;}
     .chart-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--primary),#00c2cb);border-radius:16px 16px 0 0;}
     .chart-card h3{margin:4px 0 16px;font-size:18px;color:var(--dark);font-weight:600;word-break:break-word;}
-    .chart-summary{margin-top:8px;font-size:13px;color:var(--gray);white-space:pre-wrap;}
+    .chart-summary{margin-top:8px;font-size:13px;color:var(--gray);white-space:pre-wrap;text-align:left;}
+    canvas{max-height:320px;border-radius:12px;}
     #status,#error{grid-column:1/-1;text-align:center;font-size:15px;padding:10px 14px;border-radius:8px;}
     #status{background:rgba(40,167,69,.1);color:var(--success);border:1px solid rgba(40,167,69,.2);}
     #error{background:rgba(220,53,69,.08);color:var(--danger);border:1px solid rgba(220,53,69,.15);display:none;white-space:pre-wrap;}
@@ -67,13 +66,13 @@
   <div class="title-container">
     <img src="norconsult-logo-black.png" alt="Norconsult logo" class="logo">
     <div class="title-block">
-      <h1 class="title">aaMMIXtractor</h1>
+      <h1 class="title">MMIXtractor</h1>
       <div class="org">Norconsult Norge</div>
       <div class="dev">Developed by Edin Dzakmic, Norconsult, (AI-assisted development)</div>
     </div>
   </div>
 
-  <span class="subtitle">aaMMIXtractor direkte i modellen</span>
+  <span class="subtitle">MMIXtractor direkte i modellen</span>
 
   <div class="selector-row">
     <label>MMI Property Set:
@@ -86,7 +85,7 @@
 
   <div class="button-row">
     <button id="scanButton" disabled>🔄 Oppdater liste</button>
-    <button id="loadButton" disabled>📊 Hent aaMMIXtractor</button>
+    <button id="loadButton" disabled>📊 Hent MMIXtractor</button>
     <button id="colorizeButton" disabled>🎨 Fargelegg etter MMI</button>
     <button id="resetButton" disabled>🔄 Tilbakestill farger</button>
   </div>
@@ -97,9 +96,8 @@
   <div id="error"></div>
   <div id="chartsContainer"></div>
   <div class="footer-credit">
-    MMI-oversikt basert på MMI-veilederen 2.0.<br>
-    Filtrer bort: <b>IFCPROJECT</b> / <b>IFCSITE</b> / <b>IFCBUILDING</b> / <b>IFCBUILDINGSTOREY</b>.<br>
-    Du velger <b>Property Set</b>; vi auto-velger en <b>MMI property</b> innenfor valgt set.
+    Kakestykket teller <b>kun objekter i 3D-viewer</b> og <b>kun modeller som er synlige (ON i Models)</b>.<br>
+    Filtrer bort: <b>IFCPROJECT</b> / <b>IFCSITE</b> / <b>IFCBUILDING</b> / <b>IFCBUILDINGSTOREY</b>.
   </div>
 </main>
 
@@ -161,81 +159,102 @@
 
   // --- Robust parsing / kategorier ---
   const DASH_CHARS=/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g;
-  function normalizeForDashCheck(s){
-    return String(s||"").trim().replace(DASH_CHARS,"-").replace(/\s+/g,"");
-  }
+  function normalizeForDashCheck(s){ return String(s||"").trim().replace(DASH_CHARS,"-").replace(/\s+/g,""); }
   function parseMMIKey(rawValue){
     if(rawValue===null||rawValue===undefined) return "EMPTY";
     const s0=String(rawValue).trim();
     if(!s0) return "EMPTY";
-
     const up=s0.toUpperCase();
     if(up==="HOLD") return "HOLD";
-
     const dashNorm=normalizeForDashCheck(s0);
     if(dashNorm && /^-+$/.test(dashNorm)) return "--";
-
     const m=s0.match(/\b\d{3}\b/);
     if(m) return m[0];
-
     return "EMPTY";
   }
   function keyLabel(key){ if(key==="HOLD") return "HOLD"; if(key==="--") return "--"; if(key==="EMPTY") return "Tom / ingen MMI"; return `MMI ${key}`; }
   function keyColor(key){ return MMI_COLORS[key] || EXTRA_COLORS[key] || "#cccccc"; }
 
-  // ✅ Auto-velg MMI-property INNEFOR valgt pset
+  // Du velger pset selv; auto-velg property innenfor valgt pset
   const MMI_PROP_PRIORITY = ["MMI", "01_MMI", "MMI_AVINOR"];
   function pickBestMMIPropertyFromList(props){
     if(!props?.length) return "";
     const lower = props.map(p => ({ p, l: p.toLowerCase() }));
-
-    // 1) eksakte treff i prioritert rekkefølge
     for (const cand of MMI_PROP_PRIORITY){
       const hit = lower.find(x => x.l === cand.toLowerCase());
       if(hit) return hit.p;
     }
-    // 2) noe som inneholder "mmi"
     const contains = lower.find(x => x.l.includes("mmi"));
-    if(contains) return contains.p;
-
-    // 3) ingenting - la bruker velge
-    return "";
+    return contains ? contains.p : "";
   }
-
   function populatePropSelect(pset){
     els.propSelect.innerHTML='<option value="">(velg…)</option>';
     els.propSelect.disabled=true;
-
     if(!pset || !availableProps[pset]) return;
-
     const props = Array.from(availableProps[pset]).sort((a,b)=>a.localeCompare(b,"nb"));
     props.forEach(p=>{
       const opt=document.createElement("option");
       opt.value=p; opt.textContent=p;
       els.propSelect.appendChild(opt);
     });
-
     els.propSelect.disabled=false;
-
-    // auto-velg MMI property innenfor valgt pset (men bruker kan overstyre)
     const autoProp = pickBestMMIPropertyFromList(props);
     if(autoProp){
       els.propSelect.value = autoProp;
-      els.status.textContent = `✅ Auto-valgte MMI property: «${autoProp}» i «${pset}». (Du kan endre manuelt)`;
+      els.status.textContent = `✅ Auto-valgte MMI property: «${autoProp}» i «${pset}».`;
     } else {
-      els.status.textContent = `ℹ️ Fant ingen tydelig MMI-property i «${pset}». Velg property manuelt.`;
+      els.status.textContent = `ℹ️ Velg MMI property manuelt i «${pset}».`;
     }
   }
 
-  async function connect(){
+  // ✅ NØKKEL: hent kun modeller som er synlige (ON i Models)
+  async function getVisibleModelIdsFromViewer(loadedModels){
+    const ids = loadedModels.map(m => m.modelId || m.modelid || m["model Id"]).filter(Boolean);
+
+    // Strategi A: viewer.getModels() med visibility-info
     try{
-      API=await TrimbleConnectWorkspace.connect(window.parent, ()=>{}, 30000);
-      els.status.textContent="✅ Tilkoblet – trykk «Oppdater liste» for å hente MMI-egenskaper.";
-      els.scanButton.disabled=false;
-    }catch(e){
-      showError("Kunne ikke koble til Trimble Connect: " + (e?.message||e));
-      els.status.textContent="❌ Feil ved tilkobling.";
-    }
+      if (typeof API.viewer.getModels === "function"){
+        const ms = await API.viewer.getModels();
+        if (Array.isArray(ms) && ms.length){
+          const visible = ms.filter(x =>
+            x &&
+            (x.visible === true || x.isVisible === true || x.visibility === true || x.hidden === false)
+          ).map(x => x.id || x.modelId || x.modelid).filter(Boolean);
+
+          if (visible.length) return new Set(visible);
+        }
+      }
+    }catch(e){ /* ignore */ }
+
+    // Strategi B: getModelState / getModelStates
+    try{
+      if (typeof API.viewer.getModelStates === "function"){
+        const states = await API.viewer.getModelStates(ids);
+        if (Array.isArray(states) && states.length){
+          const visible = states.filter(s =>
+            s && (s.visible === true || s.isVisible === true || s.hidden === false)
+          ).map(s => s.modelId || s.id).filter(Boolean);
+          if (visible.length) return new Set(visible);
+        }
+      }
+    }catch(e){ /* ignore */ }
+
+    // Strategi C: getModelState per modell
+    try{
+      if (typeof API.viewer.getModelState === "function"){
+        const visible = [];
+        for (const id of ids){
+          const st = await API.viewer.getModelState(id);
+          if (st && (st.visible === true || st.isVisible === true || st.hidden === false)) visible.push(id);
+        }
+        if (visible.length) return new Set(visible);
+      }
+    }catch(e){ /* ignore */ }
+
+    // Fallback: vi klarer ikke å lese synlighet -> bruk alt lastet
+    els.status.textContent =
+      "⚠️ Klarte ikke å lese modell-synlighet fra API. Teller alle lastede modeller i vieweren.";
+    return new Set(ids);
   }
 
   async function scanProperties(){
@@ -244,17 +263,21 @@
     clearCharts(); showError(""); availableProps={}; resetSelectors();
     els.loadButton.disabled=true; els.colorizeButton.disabled=true; els.resetButton.disabled=true;
 
-    els.status.textContent="🔍 Skanner modell for Property Sets (filtrerer bort topp-IFC)…";
+    els.status.textContent="🔍 Skanner 3D-viewer (kun synlige modeller)…";
     setBusy(true);
 
     try{
-      const models=await API.viewer.getObjects();
-      if(!models?.length){ els.status.textContent="ℹ️ Fant ingen objekter i visningen."; return; }
+      const loaded = await API.viewer.getObjects(); // lastet i viewer
+      if(!loaded?.length){ els.status.textContent="ℹ️ Fant ingen objekter i visningen."; return; }
 
-      for(const m of models){
+      const visibleSet = await getVisibleModelIdsFromViewer(loaded);
+
+      for(const m of loaded){
         const modelId=m.modelId||m.modelid||m["model Id"];
+        if(!modelId || !visibleSet.has(modelId)) continue;
+
         const objs=m.objects||[];
-        if(!modelId||!objs.length) continue;
+        if(!objs.length) continue;
 
         const rids=Array.from(new Set(objs.map(o=>Number(o.id)).filter(Number.isFinite)));
         if(!rids.length) continue;
@@ -279,16 +302,14 @@
       }
 
       const psetNames=Object.keys(availableProps);
-      if(!psetNames.length){ els.status.textContent="ℹ️ Ingen Property Sets funnet (etter filtrering)."; return; }
+      if(!psetNames.length){ els.status.textContent="ℹ️ Ingen Property Sets funnet (etter filtrering og synlighet)."; return; }
 
       psetNames.sort((a,b)=>a.localeCompare(b,"nb")).forEach(n=>{
         const opt=document.createElement("option"); opt.value=n; opt.textContent=n;
         els.psetSelect.appendChild(opt);
       });
-
       els.psetSelect.disabled=false;
 
-      // foreslå pset som inneholder mmi i navnet, men brukeren kan endre
       const autoPset =
         psetNames.find(n=>n.toLowerCase().includes("mmi")) ||
         psetNames.find(n=>n === "0_Generell");
@@ -307,7 +328,6 @@
     }finally{ setBusy(false); }
   }
 
-  // ✅ Finn MMI-verdien KUN i valgt pset + valgt property (ingen fallback på andre pset)
   function findValueInChosenPset(objProps, chosenPset, chosenProp){
     for(const ps of (objProps?.properties||[])){
       if(norm(ps?.name) !== norm(chosenPset)) continue;
@@ -320,15 +340,21 @@
 
   async function getMMIData(chosenPset, chosenProp){
     const countsByKey={}, selectionByKey={};
-    let missingPset=0, missingProp=0, ok=0;
+    let usedModels=[], totalObjectsCounted=0;
 
-    const models=await API.viewer.getObjects();
-    if(!models?.length) return { countsByKey, selectionByKey:{}, total:0, dbg:"Ingen modeller." };
+    const loaded = await API.viewer.getObjects();
+    if(!loaded?.length) return { countsByKey, selectionByKey:{}, total:0, dbg:"Ingen modeller i viewer." };
 
-    for(const m of models){
+    const visibleSet = await getVisibleModelIdsFromViewer(loaded);
+
+    for(const m of loaded){
       const modelId=m.modelId||m.modelid||m["model Id"];
+      if(!modelId || !visibleSet.has(modelId)) continue;
+
       const objs=m.objects||[];
-      if(!modelId||!objs.length) continue;
+      if(!objs.length) continue;
+
+      usedModels.push(modelId);
 
       const rids=Array.from(new Set(objs.map(o=>Number(o.id)).filter(Number.isFinite)));
       if(!rids.length) continue;
@@ -341,29 +367,26 @@
         if(!objProps) continue;
         if(isIgnored(objProps)) continue;
 
-        const hasPset = (objProps.properties || []).some(ps => norm(ps?.name) === norm(chosenPset));
-        if(!hasPset) missingPset++;
-
         const val = findValueInChosenPset(objProps, chosenPset, chosenProp);
-        if(val === null && hasPset) missingProp++;
-        else if(val !== null) ok++;
-
         const key=parseMMIKey(val);
+
         countsByKey[key]=(countsByKey[key]||0)+1;
 
         if(!selectionByKey[key]) selectionByKey[key]={};
         if(!selectionByKey[key][modelId]) selectionByKey[key][modelId]=[];
         selectionByKey[key][modelId].push(rid);
+
+        totalObjectsCounted++;
       }
     }
 
     const total=Object.values(countsByKey).reduce((a,b)=>a+b,0);
     const dbg =
-`Valgt pset: ${chosenPset}
-Valgt prop: ${chosenProp}
-Objekter uten pset: ${missingPset}
-Objekter med pset men uten prop/verdi: ${missingProp}
-Objekter med prop/verdi: ${ok}`;
+`Tellings-scope: Kun synlige modeller i 3D (Models=ON)
+Synlige modeller brukt: ${usedModels.length}
+Totalt objekter telt (etter topp-IFC filter): ${totalObjectsCounted}
+Valgt pset: ${chosenPset}
+Valgt prop: ${chosenProp}`;
     return { countsByKey, selectionByKey, total, dbg };
   }
 
@@ -394,7 +417,7 @@ Objekter med prop/verdi: ${ok}`;
     const card=document.createElement("div");
     card.className="chart-card";
     const h=document.createElement("h3");
-    h.textContent=`aaMMIXtractor – ${pset} / ${prop}`;
+    h.textContent=`MMIXtractor – ${pset} / ${prop}`;
     card.appendChild(h);
 
     const canvas=document.createElement("canvas");
@@ -412,9 +435,9 @@ Objekter med prop/verdi: ${ok}`;
     const summary=document.createElement("div");
     summary.className="chart-summary";
     summary.textContent =
-      `Totalt ${total} objekter (topp-IFC filtrert bort).\n` +
+      `Totalt ${total} objekter (kun synlige modeller, topp-IFC filtrert).\n` +
       `--: ${countsByKey["--"]||0} | HOLD: ${countsByKey["HOLD"]||0} | Tom/ingen: ${countsByKey["EMPTY"]||0}\n\n` +
-      `${dbg}`;
+      dbg;
     card.appendChild(summary);
 
     els.chartsContainer.appendChild(card);
@@ -450,22 +473,20 @@ Objekter med prop/verdi: ${ok}`;
 
   async function loadMMIChart(){
     clearCharts(); showError("");
-
     const pset=els.psetSelect.value;
     const prop=els.propSelect.value;
-
     if(!pset){ showError("Velg MMI Property Set først."); return; }
-    if(!prop){ showError("Velg MMI property (auto-velg forsøkes, ellers velg manuelt)."); return; }
+    if(!prop){ showError("Velg MMI property."); return; }
 
-    els.status.textContent="📈 Leser MMI-verdier i valgt Property Set…";
+    els.status.textContent="📈 Leser MMI-verdier (kun synlige modeller i 3D)…";
     els.colorizeButton.disabled=true; els.resetButton.disabled=true;
     setBusy(true);
 
     try{
       const mmiData=await getMMIData(pset, prop);
-      if(!mmiData.total){ els.status.textContent="Ingen objekter funnet (etter filtrering)."; return; }
+      if(!mmiData.total){ els.status.textContent="Ingen objekter funnet (etter filtrering og synlighet)."; return; }
       createPie(pset, prop, mmiData);
-      els.status.textContent="✅ Klar! Tom/ingen MMI gjelder nå kun valgt pset + valgt property.";
+      els.status.textContent="✅ Klar! Kakediagram = 1:1 med det som er synlig i 3D-viewer.";
       els.colorizeButton.disabled=false; els.resetButton.disabled=false;
     }catch(e){
       showError("Feil ved henting av MMI-data: " + (e?.message||e));
@@ -476,7 +497,7 @@ Objekter med prop/verdi: ${ok}`;
   async function colorizeAllMMI(){
     const selectionByKey=mmiSelectionGlobal.selectionByKey||{};
     const keys=Object.keys(selectionByKey);
-    if(!keys.length){ showError("Ingen MMI-data å fargelegge. Hent aaMMIXtractor først."); return; }
+    if(!keys.length){ showError("Ingen MMI-data å fargelegge. Hent MMIXtractor først."); return; }
 
     showError(""); els.status.textContent="🎨 Fargelegger objekter etter MMI-kategori…";
     setBusy(true);
@@ -517,28 +538,27 @@ Objekter med prop/verdi: ${ok}`;
     }
   }
 
+  async function connect(){
+    try{
+      API=await TrimbleConnectWorkspace.connect(window.parent, ()=>{}, 30000);
+      els.status.textContent="✅ Tilkoblet – trykk «Oppdater liste» for å hente MMI-egenskaper.";
+      els.scanButton.disabled=false;
+    }catch(e){
+      showError("Kunne ikke koble til Trimble Connect: " + (e?.message||e));
+      els.status.textContent="❌ Feil ved tilkobling.";
+    }
+  }
+
   // wiring
   els.scanButton.onclick=scanProperties;
   els.loadButton.onclick=loadMMIChart;
   els.colorizeButton.onclick=colorizeAllMMI;
   els.resetButton.onclick=resetAll;
 
-  els.psetSelect.onchange = e => {
-    clearCharts(); showError("");
-    populatePropSelect(e.target.value);
-    els.colorizeButton.disabled=true;
-    els.resetButton.disabled=true;
-  };
-
-  // hvis du bytter property manuelt, nullstiller vi charts
-  els.propSelect.onchange = () => {
-    clearCharts(); showError("");
-    els.colorizeButton.disabled=true;
-    els.resetButton.disabled=true;
-  };
+  els.psetSelect.onchange = e => { clearCharts(); showError(""); populatePropSelect(e.target.value); els.colorizeButton.disabled=true; els.resetButton.disabled=true; };
+  els.propSelect.onchange = () => { clearCharts(); showError(""); els.colorizeButton.disabled=true; els.resetButton.disabled=true; };
 
   connect();
 </script>
 </body>
 </html>
-
