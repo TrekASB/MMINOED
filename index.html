@@ -14,10 +14,9 @@
       --primary: #0069d9;
       --success: #28a745;
       --danger: #e74c3c;
-      --light: #f8f9fa;
-      --dark: #343a40;
       --gray: #6c757d;
       --border: #dee2e6;
+      --dark: #343a40;
     }
     body {
       margin: 0;
@@ -86,7 +85,6 @@
     }
     .chart-card h3{ margin:4px 0 16px; font-size:18px; color:var(--dark); font-weight:600; word-break:break-word; }
     .chart-summary{ margin-top:8px; font-size:13px; color:var(--gray); }
-    canvas{ max-height:320px; border-radius:12px; }
 
     #status, #error{ grid-column:1 / -1; text-align:center; font-size:15px; padding:10px 14px; border-radius:8px; }
     #status{ background:rgba(40,167,69,0.1); color:var(--success); border:1px solid rgba(40,167,69,0.2); }
@@ -163,11 +161,8 @@
   let charts = [];
 
   const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
-
-  // Globalt utvalg for fargelegging
   let mmiSelectionGlobal = { selectionByKey: {} };
 
-  // MMI-farger
   const MMI_COLORS = {
     "000": "#D73296","100": "#BE2823","125": "#D24B46","150": "#E17873","175": "#F0AAAA",
     "200": "#E69637","225": "#EBAF64","250": "#F0C88C","275": "#F5E6D7",
@@ -176,7 +171,7 @@
     "500": "#1E46AF","600": "#9B00CD"
   };
 
-  // Ekstra kategorier (matcher tabellen din)
+  // Ekstra kategorier (matcher tabellen)
   const EXTRA_COLORS = {
     "HOLD": "#6b7280",
     "--":   "#9ca3af",
@@ -327,6 +322,7 @@
         els.psetSelect.appendChild(opt);
       });
 
+      // alltid mulig å endre
       els.psetSelect.disabled = false;
 
       const autoPset =
@@ -349,25 +345,35 @@
     }
   }
 
-  // ✅ Viktig: Del opp i samme grupper som tabellen
-  // Returnerer en KEY:
+  // ✅ Robust dash-normalisering (fikser at '--' ofte er en/em-dash, med mellomrom osv.)
+  const DASH_CHARS = /[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g;
+
+  function normalizeForDashCheck(s){
+    return String(s || "")
+      .trim()
+      .replace(DASH_CHARS, "-")
+      .replace(/\s+/g, "");
+  }
+
+  // Returnerer KEY:
   // - "100"/"350"/... for numerisk
   // - "HOLD" for HOLD
-  // - "--" for --
+  // - "--" for alle varianter av dash/dash + mellomrom
   // - "EMPTY" for tom/null/annet
   function parseMMIKey(rawValue){
     if (rawValue === null || rawValue === undefined) return "EMPTY";
-    const s = String(rawValue).trim();
-    if (!s) return "EMPTY";
+    const s0 = String(rawValue).trim();
+    if (!s0) return "EMPTY";
 
-    const up = s.toUpperCase();
+    const up = s0.toUpperCase();
     if (up === "HOLD") return "HOLD";
-    if (s === "--" || up === "—" || up === "-" ) return "--";
 
-    const m = s.match(/\b\d{3}\b/);
+    const dashNorm = normalizeForDashCheck(s0);
+    if (dashNorm && /^-+$/.test(dashNorm)) return "--"; // "-" / "--" / "——" / " - - " etc.
+
+    const m = s0.match(/\b\d{3}\b/);
     if (m) return m[0];
 
-    // alt annet som ikke kan tolkes:
     return "EMPTY";
   }
 
@@ -503,14 +509,7 @@
     const canvas = document.createElement("canvas");
     card.appendChild(canvas);
 
-    const summary = document.createElement("div");
-    summary.className = "chart-summary";
-    summary.textContent = `Totalt ${total} objekter (topp-IFC filtrert bort). Klikk på en kategori for å markere.`;
-    card.appendChild(summary);
-
-    els.chartsContainer.appendChild(card);
-
-    // Sortering: numeriske først, så HOLD, --, EMPTY
+    // Sort: numeriske først, så HOLD, --, EMPTY
     const keys = Object.keys(countsByKey);
     const numeric = keys.filter(k => /^\d{3}$/.test(k)).sort((a,b)=>Number(a)-Number(b));
     const tail = ["HOLD","--","EMPTY"].filter(k => keys.includes(k));
@@ -519,6 +518,15 @@
     const labels = ordered.map(keyLabel);
     const data = ordered.map(k => countsByKey[k]);
     const colors = ordered.map(keyColor);
+
+    const summary = document.createElement("div");
+    summary.className = "chart-summary";
+    const dashCount = countsByKey["--"] || 0;
+    const emptyCount = countsByKey["EMPTY"] || 0;
+    summary.textContent = `Totalt ${total} objekter (topp-IFC filtrert bort). “--”: ${dashCount}. Tom/ingen: ${emptyCount}.`;
+    card.appendChild(summary);
+
+    els.chartsContainer.appendChild(card);
 
     const chart = new Chart(canvas, {
       type: "pie",
@@ -582,7 +590,7 @@
         return;
       }
       createPie(pset, prop, mmiData);
-      els.status.textContent = "✅ Klar! Nå er HOLD / -- / Tom skilt ut (matcher tabellen bedre).";
+      els.status.textContent = "✅ Klar! Nå skal “--” ikke slå seg sammen med “Tom/ingen MMI”.";
       els.colorizeButton.disabled = false;
       els.resetButton.disabled = false;
     }catch(e){
@@ -620,8 +628,7 @@
         }
         if (!modelObjectIds.length) continue;
 
-        const hex = keyColor(key);
-        const rgba = hexToRgba(hex);
+        const rgba = hexToRgba(keyColor(key));
         await API.viewer.setObjectState({ modelObjectIds }, { color: rgba });
       }
 
