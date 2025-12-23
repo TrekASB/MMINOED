@@ -211,6 +211,7 @@
       color: var(--danger);
       border: 1px solid rgba(220, 53, 69, 0.15);
       display: none;
+      white-space: pre-wrap;
     }
     .footer-credit {
       grid-column: 1 / -1;
@@ -219,6 +220,7 @@
       color: #888;
       margin-top: 8px;
       font-style: italic;
+      line-height: 1.35;
     }
     .button-row {
       display: flex;
@@ -286,7 +288,7 @@
 
     <div class="button-row">
       <button id="scanButton" disabled>🔄 Oppdater liste</button>
-      <button id="loadButton" disabled>📊 Hent MMIXtractorg</button>
+      <button id="loadButton" disabled>📊 Hent MMIXtractor</button>
       <button id="colorizeButton" disabled>🎨 Fargelegg etter MMI</button>
       <button id="resetButton" disabled>🔄 Tilbakestill farger</button>
     </div>
@@ -297,7 +299,7 @@
     <div id="error"></div>
     <div id="chartsContainer"></div>
     <div class="footer-credit">
-      MultiProperty Checker – MMI-oversikt basert på MMI-veilederen 2.0.<br>
+      MMI-oversikt basert på MMI-veilederen 2.0.<br>
       Filtrer bort: <b>IFCPROJECT</b> / <b>IFCSITE</b> / <b>IFCBUILDING</b> / <b>IFCBUILDINGSTOREY</b>.<br>
       Klikk på et kakestykke for å markere objekter med valgt MMI-kode i modellen.
     </div>
@@ -352,10 +354,9 @@
       resetButton: document.getElementById("resetButton")
     };
 
-    // Registrer datalabels-plugin for prosenttekst inne i kakestykkene
-    if (window.ChartDataLabels) {
-      Chart.register(ChartDataLabels);
-    }
+    if (window.ChartDataLabels) Chart.register(ChartDataLabels);
+
+    function norm(v){ return (v===null || v===undefined) ? "" : String(v).trim(); }
 
     function showError(msg) {
       els.error.textContent = msg || "";
@@ -363,12 +364,7 @@
     }
 
     function setBusy(isBusy) {
-      const buttons = [
-        els.scanButton,
-        els.loadButton,
-        els.colorizeButton,
-        els.resetButton
-      ];
+      const buttons = [els.scanButton, els.loadButton, els.colorizeButton, els.resetButton];
       buttons.forEach(btn => {
         if (!btn) return;
         if (isBusy) {
@@ -380,9 +376,7 @@
       });
     }
 
-    // ====== Filter helpers (samme logikk som MultiPropertyLabelr) ======
-    function norm(v){ return (v===null || v===undefined) ? "" : String(v).trim(); }
-
+    // ===== Filter (samme logikk som MultiPropertyLabelr) =====
     function getIfcType(objProps){
       const direct = norm(objProps?.ifcType || objProps?.ifcEntity || objProps?.entityType || objProps?.type);
       return direct ? direct.toUpperCase() : "";
@@ -392,14 +386,13 @@
       const t = getIfcType(objProps);
       if (t && IGNORE_TYPES.has(t)) return true;
 
-      // fallback: sjekk navn/objektnavn hvis type ikke finnes
       const n = norm(objProps?.name || objProps?.objectName || objProps?.displayName).toUpperCase();
       for (const it of IGNORE_TYPES){
         if (n === it || n.includes(it)) return true;
       }
       return false;
     }
-    // ===================================================================
+    // ========================================================
 
     async function connect() {
       try {
@@ -421,7 +414,6 @@
     function resetSelectors() {
       els.psetSelect.innerHTML = '<option value="">(velg…)</option>';
       els.psetSelect.disabled = true;
-
       els.propSelect.innerHTML = '<option value="">(velg…)</option>';
       els.propSelect.disabled = true;
     }
@@ -442,16 +434,11 @@
       els.propSelect.disabled = false;
 
       const mmiOption = Array.from(els.propSelect.options).find(o => o.value.toLowerCase() === "mmi");
-      if (mmiOption) {
-        els.propSelect.value = mmiOption.value;
-      }
+      if (mmiOption) els.propSelect.value = mmiOption.value;
     }
 
     async function scanProperties() {
-      if (!API) {
-        showError("API ikke klar. Vent et øyeblikk og prøv igjen.");
-        return;
-      }
+      if (!API) { showError("API ikke klar. Vent litt og prøv igjen."); return; }
 
       clearCharts();
       showError("");
@@ -461,14 +448,13 @@
       els.colorizeButton.disabled = true;
       els.resetButton.disabled = true;
 
-      els.status.textContent = "🔍 Skanner modell for Property Sets og MMI-egenskaper (filtrerer bort IFCPROJECT/SITE/BUILDING/STOREY)…";
+      els.status.textContent = "🔍 Skanner modell for Property Sets og MMI-egenskaper (filtrerer bort topp-IFC)…";
       setBusy(true);
 
       try {
         const models = await API.viewer.getObjects();
         if (!models || !models.length) {
           els.status.textContent = "ℹ️ Fant ingen objekter i visningen. Sørg for at modell(er) er innlastet.";
-          setBusy(false);
           return;
         }
 
@@ -477,16 +463,18 @@
           const objs = m.objects || [];
           if (!modelId || !objs.length) continue;
 
-          const runtimeIds = objs.map(o => o.id);
+          // ✅ De-dupe runtimeIds
+          const runtimeIds = Array.from(new Set(objs.map(o => Number(o.id)).filter(Number.isFinite)));
           if (!runtimeIds.length) continue;
 
-          const objProps = await API.viewer.getObjectProperties(modelId, runtimeIds);
+          const objPropsArr = await API.viewer.getObjectProperties(modelId, runtimeIds);
 
-          for (const obj of (objProps || [])) {
-            if (!obj) continue;
-            if (isIgnored(obj)) continue; // ✅ NYTT: filtrer bort topp-IFC
+          for (let i = 0; i < runtimeIds.length; i++) {
+            const objProps = objPropsArr?.[i];
+            if (!objProps) continue;
+            if (isIgnored(objProps)) continue;
 
-            for (const pset of (obj.properties || [])) {
+            for (const pset of (objProps.properties || [])) {
               const name = pset.name || "";
               if (!name) continue;
               if (!availableProps[name]) availableProps[name] = new Set();
@@ -501,29 +489,30 @@
         if (!psetNames.length) {
           els.status.textContent = "ℹ️ Ingen Property Sets funnet (etter filtrering).";
           resetSelectors();
-        } else {
-          psetNames.sort((a, b) => a.localeCompare(b, "nb")).forEach(n => {
-            const opt = document.createElement("option");
-            opt.value = n;
-            opt.textContent = n;
-            els.psetSelect.appendChild(opt);
-          });
-
-          els.psetSelect.disabled = true;
-          els.propSelect.disabled = true;
-
-          const autoPset = psetNames.find(n => n.toLowerCase().includes("mmi"));
-          if (autoPset) {
-            els.psetSelect.value = autoPset;
-            populatePropSelect(autoPset);
-          } else {
-            els.psetSelect.disabled = false;
-          }
-
-          els.status.textContent =
-            "✅ Ferdig skannet (filtrert). Velg MMI Property Set og MMI property (som regel «MMI»).";
-          els.loadButton.disabled = false;
+          return;
         }
+
+        psetNames.sort((a, b) => a.localeCompare(b, "nb")).forEach(n => {
+          const opt = document.createElement("option");
+          opt.value = n;
+          opt.textContent = n;
+          els.psetSelect.appendChild(opt);
+        });
+
+        els.psetSelect.disabled = true;
+        els.propSelect.disabled = true;
+
+        const autoPset = psetNames.find(n => n.toLowerCase().includes("mmi")) || psetNames.find(n => n === "0_Generell");
+        if (autoPset) {
+          els.psetSelect.value = autoPset;
+          populatePropSelect(autoPset);
+        } else {
+          els.psetSelect.disabled = false;
+        }
+
+        els.status.textContent = "✅ Ferdig skannet. Velg MMI Property Set og MMI property (som regel «MMI»).";
+        els.loadButton.disabled = false;
+
       } catch (e) {
         showError("Feil under skanning av egenskaper: " + (e && e.message ? e.message : e));
         els.status.textContent = "❌ Klarte ikke å skanne egenskaper.";
@@ -537,19 +526,19 @@
       const str = String(rawValue).trim();
       if (!str) return null;
       const match = str.match(/\d{3}/);
-      if (!match) return null;
-      return match[0];
+      return match ? match[0] : null;
     }
 
+    // ✅ FIX: De-dupe + Set-basert lagring -> ingen dobbeltføring
     async function getMMIData(psetName, propName) {
       const countsByCode = {};
-      const selectionByCode = {};
+      const selectionByCode = {};   // code -> modelId -> Set(runtimeIds)
       let missingCount = 0;
-      const missingSelection = {};
+      const missingSelection = {};  // modelId -> Set(runtimeIds)
 
       const models = await API.viewer.getObjects();
       if (!models || !models.length) {
-        return { countsByCode, selectionByCode, missingCount, missingSelection, total: 0 };
+        return { countsByCode, selectionByCode: {}, missingCount, missingSelection: {}, total: 0 };
       }
 
       for (const m of models) {
@@ -557,54 +546,77 @@
         const objs = m.objects || [];
         if (!modelId || !objs.length) continue;
 
-        const runtimeIds = objs.map(o => o.id);
+        const runtimeIds = Array.from(new Set(objs.map(o => Number(o.id)).filter(Number.isFinite)));
         if (!runtimeIds.length) continue;
 
-        const objProps = await API.viewer.getObjectProperties(modelId, runtimeIds);
+        const objPropsArr = await API.viewer.getObjectProperties(modelId, runtimeIds);
 
-        for (const obj of (objProps || [])) {
-          if (!obj) continue;
-          if (isIgnored(obj)) continue; // ✅ NYTT: filtrer bort topp-IFC
+        const seen = new Set(); // modelId:rid
+
+        for (let i = 0; i < runtimeIds.length; i++) {
+          const rid = runtimeIds[i];
+          const objProps = objPropsArr?.[i];
+          if (!objProps) continue;
+
+          const key = `${modelId}:${rid}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          if (isIgnored(objProps)) continue;
 
           let value = null;
+          let found = false;
 
-          for (const ps of (obj.properties || [])) {
+          for (const ps of (objProps.properties || [])) {
             if (ps.name !== psetName) continue;
             for (const p of (ps.properties || [])) {
               if (p.name === propName) {
                 value = p.value;
+                found = true;
                 break;
               }
             }
+            if (found) break;
           }
 
           const code = parseMMICode(value);
 
           if (code) {
-            if (!countsByCode[code]) countsByCode[code] = 0;
-            countsByCode[code]++;
+            countsByCode[code] = (countsByCode[code] || 0) + 1;
 
             if (!selectionByCode[code]) selectionByCode[code] = {};
-            if (!selectionByCode[code][modelId]) selectionByCode[code][modelId] = [];
-            selectionByCode[code][modelId].push(obj.id);
+            if (!selectionByCode[code][modelId]) selectionByCode[code][modelId] = new Set();
+            selectionByCode[code][modelId].add(rid);
           } else {
             missingCount++;
-            if (!missingSelection[modelId]) missingSelection[modelId] = [];
-            missingSelection[modelId].push(obj.id);
+            if (!missingSelection[modelId]) missingSelection[modelId] = new Set();
+            missingSelection[modelId].add(rid);
           }
         }
       }
 
+      // Konverter Set -> Array (for TC API)
+      const selectionByCodeOut = {};
+      for (const code of Object.keys(selectionByCode)) {
+        selectionByCodeOut[code] = {};
+        for (const modelId of Object.keys(selectionByCode[code])) {
+          selectionByCodeOut[code][modelId] = Array.from(selectionByCode[code][modelId]);
+        }
+      }
+
+      const missingSelectionOut = {};
+      for (const modelId of Object.keys(missingSelection)) {
+        missingSelectionOut[modelId] = Array.from(missingSelection[modelId]);
+      }
+
       const total = Object.values(countsByCode).reduce((a, b) => a + b, 0) + missingCount;
-      return { countsByCode, selectionByCode, missingCount, missingSelection, total };
+      return { countsByCode, selectionByCode: selectionByCodeOut, missingCount, missingSelection: missingSelectionOut, total };
     }
 
     async function highlightMMICode(codeKey, selectionByCode, missingSelection) {
       if (!API) return;
 
-      let perModel;
-      let labelText;
-
+      let perModel, labelText;
       if (codeKey === "MISSING") {
         perModel = missingSelection;
         labelText = "uten/ugyldig MMI";
@@ -665,12 +677,8 @@
       const distinctCodes = Object.keys(countsByCode).sort((a, b) => parseInt(a) - parseInt(b));
 
       let summaryText = `Totalt ${total} objekter med/uten MMI (topp-IFC filtrert bort).`;
-      if (distinctCodes.length) {
-        summaryText += ` Registrerte MMI-koder: ${distinctCodes.join(", ")}.`;
-      }
-      if (missingCount) {
-        summaryText += ` Objekter uten/ugyldig MMI: ${missingCount}.`;
-      }
+      if (distinctCodes.length) summaryText += ` Registrerte MMI-koder: ${distinctCodes.join(", ")}.`;
+      if (missingCount) summaryText += ` Objekter uten/ugyldig MMI: ${missingCount}.`;
       summary.textContent = summaryText;
       card.appendChild(summary);
 
@@ -712,11 +720,7 @@
           plugins: {
             legend: {
               position: "bottom",
-              labels: {
-                font: { size: 14 },
-                padding: 20,
-                usePointStyle: true
-              }
+              labels: { font: { size: 14 }, padding: 20, usePointStyle: true }
             },
             tooltip: {
               callbacks: {
@@ -755,21 +759,17 @@
     }
 
     async function loadMMIChart() {
-      if (!API) {
-        showError("API ikke klar. Vent et øyeblikk og prøv igjen.");
-        return;
-      }
+      if (!API) { showError("API ikke klar. Vent litt og prøv igjen."); return; }
 
       clearCharts();
       showError("");
 
       const pset = els.psetSelect.value;
       const prop = els.propSelect.value;
-
       if (!pset) { showError("Velg MMI Property Set først."); return; }
       if (!prop) { showError("Velg MMI property (f.eks. «MMI»)."); return; }
 
-      els.status.textContent = "📈 Leser MMI-verdier og bygger kakediagram (topp-IFC filtrert bort)…";
+      els.status.textContent = "📈 Leser MMI-verdier og bygger kakediagram…";
       els.colorizeButton.disabled = true;
       els.resetButton.disabled = true;
       setBusy(true);
@@ -818,15 +818,12 @@
 
           for (const modelId in perModel) {
             const ids = perModel[modelId];
-            if (ids && ids.length) {
-              modelObjectIds.push({ modelId, objectRuntimeIds: ids });
-            }
+            if (ids && ids.length) modelObjectIds.push({ modelId, objectRuntimeIds: ids });
           }
           if (!modelObjectIds.length) continue;
 
           const hex = MMI_COLORS[code] || "#CCCCCC";
           const rgba = hexToRgba(hex);
-
           await API.viewer.setObjectState({ modelObjectIds }, { color: rgba });
         }
 
@@ -843,8 +840,7 @@
           }
         }
 
-        els.status.textContent =
-          "🎨 Fargelegging fullført: objekter er fargelagt etter MMI-kode iht. MMI-veilederen 2.0.";
+        els.status.textContent = "🎨 Fargelegging fullført: objekter er fargelagt etter MMI-kode.";
         els.resetButton.disabled = false;
       } catch (e) {
         showError("Feil ved fargelegging: " + (e && e.message ? e.message : e));
@@ -863,8 +859,7 @@
 
       try {
         await API.viewer.setObjectState(undefined, { color: "reset" });
-        els.status.textContent =
-          "🔄 Modellen er tilbakestilt til originalfarger. Du kan hente MMIXtractor på nytt ved behov.";
+        els.status.textContent = "🔄 Modellen er tilbakestilt til originalfarger.";
       } catch (e) {
         showError("Feil ved tilbakestilling av modellfarger: " + (e && e.message ? e.message : e));
         els.status.textContent = "❌ Klarte ikke å tilbakestille modellfarger.";
