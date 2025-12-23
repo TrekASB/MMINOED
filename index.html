@@ -258,10 +258,7 @@
 <body>
   <header>
     <div class="title-container">
-      <!-- Logo-fil må ligge i samme mappe som denne HTML-filen -->
-      <img src="norconsult-logo-black.png"
-           alt="Norconsult logo" class="logo">
-
+      <img src="norconsult-logo-black.png" alt="Norconsult logo" class="logo">
       <div class="title-block">
         <h1 class="title">MMIXtractor</h1>
         <div class="org">Norconsult Norge</div>
@@ -301,6 +298,7 @@
     <div id="chartsContainer"></div>
     <div class="footer-credit">
       MultiProperty Checker – MMI-oversikt basert på MMI-veilederen 2.0.<br>
+      Filtrer bort: <b>IFCPROJECT</b> / <b>IFCSITE</b> / <b>IFCBUILDING</b> / <b>IFCBUILDINGSTOREY</b>.<br>
       Klikk på et kakestykke for å markere objekter med valgt MMI-kode i modellen.
     </div>
   </main>
@@ -309,6 +307,9 @@
     let API = null;
     let availableProps = {};
     let charts = [];
+
+    // Filtrer bort "topp-IFC"
+    const IGNORE_TYPES = new Set(["IFCPROJECT","IFCSITE","IFCBUILDING","IFCBUILDINGSTOREY"]);
 
     // Globalt MMI-utvalg brukt til fargelegging
     let mmiSelectionGlobal = {
@@ -379,6 +380,27 @@
       });
     }
 
+    // ====== Filter helpers (samme logikk som MultiPropertyLabelr) ======
+    function norm(v){ return (v===null || v===undefined) ? "" : String(v).trim(); }
+
+    function getIfcType(objProps){
+      const direct = norm(objProps?.ifcType || objProps?.ifcEntity || objProps?.entityType || objProps?.type);
+      return direct ? direct.toUpperCase() : "";
+    }
+
+    function isIgnored(objProps){
+      const t = getIfcType(objProps);
+      if (t && IGNORE_TYPES.has(t)) return true;
+
+      // fallback: sjekk navn/objektnavn hvis type ikke finnes
+      const n = norm(objProps?.name || objProps?.objectName || objProps?.displayName).toUpperCase();
+      for (const it of IGNORE_TYPES){
+        if (n === it || n.includes(it)) return true;
+      }
+      return false;
+    }
+    // ===================================================================
+
     async function connect() {
       try {
         API = await TrimbleConnectWorkspace.connect(window.parent, () => {}, 30000);
@@ -419,7 +441,6 @@
       });
       els.propSelect.disabled = false;
 
-      // Dersom det finnes en property som heter "MMI" så forhåndsvelges den
       const mmiOption = Array.from(els.propSelect.options).find(o => o.value.toLowerCase() === "mmi");
       if (mmiOption) {
         els.propSelect.value = mmiOption.value;
@@ -440,7 +461,7 @@
       els.colorizeButton.disabled = true;
       els.resetButton.disabled = true;
 
-      els.status.textContent = "🔍 Skanner modell for Property Sets og MMI-egenskaper…";
+      els.status.textContent = "🔍 Skanner modell for Property Sets og MMI-egenskaper (filtrerer bort IFCPROJECT/SITE/BUILDING/STOREY)…";
       setBusy(true);
 
       try {
@@ -460,22 +481,25 @@
           if (!runtimeIds.length) continue;
 
           const objProps = await API.viewer.getObjectProperties(modelId, runtimeIds);
-          for (const obj of objProps || []) {
-            for (const pset of obj.properties || []) {
+
+          for (const obj of (objProps || [])) {
+            if (!obj) continue;
+            if (isIgnored(obj)) continue; // ✅ NYTT: filtrer bort topp-IFC
+
+            for (const pset of (obj.properties || [])) {
               const name = pset.name || "";
               if (!name) continue;
               if (!availableProps[name]) availableProps[name] = new Set();
-              for (const p of pset.properties || []) {
+              for (const p of (pset.properties || [])) {
                 if (p.name) availableProps[name].add(p.name);
               }
             }
           }
         }
 
-        // Fyll Property Set-listen
         const psetNames = Object.keys(availableProps);
         if (!psetNames.length) {
-          els.status.textContent = "ℹ️ Ingen Property Sets funnet på objektene i visningen.";
+          els.status.textContent = "ℹ️ Ingen Property Sets funnet (etter filtrering).";
           resetSelectors();
         } else {
           psetNames.sort((a, b) => a.localeCompare(b, "nb")).forEach(n => {
@@ -484,10 +508,10 @@
             opt.textContent = n;
             els.psetSelect.appendChild(opt);
           });
+
           els.psetSelect.disabled = true;
           els.propSelect.disabled = true;
 
-          // Hvis det finnes et pset som inneholder "MMI" i navnet, velg det automatisk
           const autoPset = psetNames.find(n => n.toLowerCase().includes("mmi"));
           if (autoPset) {
             els.psetSelect.value = autoPset;
@@ -497,7 +521,7 @@
           }
 
           els.status.textContent =
-            "✅ Ferdig skannet – velg MMI Property Set og MMI property (som regel «MMI»).";
+            "✅ Ferdig skannet (filtrert). Velg MMI Property Set og MMI property (som regel «MMI»).";
           els.loadButton.disabled = false;
         }
       } catch (e) {
@@ -508,19 +532,15 @@
       }
     }
 
-    // Hjelper: hent heltall (tresifret) MMI-kode fra verdi
     function parseMMICode(rawValue) {
       if (rawValue === null || rawValue === undefined) return null;
       const str = String(rawValue).trim();
       if (!str) return null;
-
-      // I henhold til veilederen skal MMI lagres som tre siffer, f.eks "200"
       const match = str.match(/\d{3}/);
       if (!match) return null;
       return match[0];
     }
 
-    // Hent MMI-data for valgt pset/property
     async function getMMIData(psetName, propName) {
       const countsByCode = {};
       const selectionByCode = {};
@@ -542,12 +562,15 @@
 
         const objProps = await API.viewer.getObjectProperties(modelId, runtimeIds);
 
-        for (const obj of objProps || []) {
+        for (const obj of (objProps || [])) {
+          if (!obj) continue;
+          if (isIgnored(obj)) continue; // ✅ NYTT: filtrer bort topp-IFC
+
           let value = null;
 
-          for (const ps of obj.properties || []) {
+          for (const ps of (obj.properties || [])) {
             if (ps.name !== psetName) continue;
-            for (const p of ps.properties || []) {
+            for (const p of (ps.properties || [])) {
               if (p.name === propName) {
                 value = p.value;
                 break;
@@ -576,7 +599,6 @@
       return { countsByCode, selectionByCode, missingCount, missingSelection, total };
     }
 
-    // Marker objekter i modellen for valgt MMI-kode
     async function highlightMMICode(codeKey, selectionByCode, missingSelection) {
       if (!API) return;
 
@@ -615,7 +637,6 @@
       }
     }
 
-    // Hjelper: konverter hex-farge til rgba-objekt for Trimble
     function hexToRgba(hex) {
       const clean = hex.replace("#", "");
       const bigint = parseInt(clean, 16);
@@ -643,10 +664,9 @@
 
       const distinctCodes = Object.keys(countsByCode).sort((a, b) => parseInt(a) - parseInt(b));
 
-      let summaryText = `Totalt ${total} objekter med/uten MMI.`;
+      let summaryText = `Totalt ${total} objekter med/uten MMI (topp-IFC filtrert bort).`;
       if (distinctCodes.length) {
-        const list = distinctCodes.join(", ");
-        summaryText += ` Registrerte MMI-koder: ${list}.`;
+        summaryText += ` Registrerte MMI-koder: ${distinctCodes.join(", ")}.`;
       }
       if (missingCount) {
         summaryText += ` Objekter uten/ugyldig MMI: ${missingCount}.`;
@@ -713,21 +733,14 @@
                 return `${pct} %`;
               },
               color: "#fff",
-              font: {
-                weight: "bold",
-                size: 13
-              },
+              font: { weight: "bold", size: 13 },
               anchor: "center",
               align: "center",
               clamp: true,
               clip: false
             }
           },
-          animation: {
-            animateRotate: true,
-            duration: 900
-          },
-          // Klikk på kakestykke → marker objekter med aktuell MMI-kode
+          animation: { animateRotate: true, duration: 900 },
           onClick: (event, elements) => {
             if (!elements || !elements.length) return;
             const index = elements[0].index;
@@ -738,8 +751,6 @@
       });
 
       charts.push(chart);
-
-      // Oppdater global MMI-selection for fargelegging
       mmiSelectionGlobal = { selectionByCode, missingSelection };
     }
 
@@ -755,16 +766,10 @@
       const pset = els.psetSelect.value;
       const prop = els.propSelect.value;
 
-      if (!pset) {
-        showError("Velg MMI Property Set først.");
-        return;
-      }
-      if (!prop) {
-        showError("Velg MMI property (f.eks. «MMI»).");
-        return;
-      }
+      if (!pset) { showError("Velg MMI Property Set først."); return; }
+      if (!prop) { showError("Velg MMI property (f.eks. «MMI»)."); return; }
 
-      els.status.textContent = "📈 Leser MMI-verdier og bygger kakediagram…";
+      els.status.textContent = "📈 Leser MMI-verdier og bygger kakediagram (topp-IFC filtrert bort)…";
       els.colorizeButton.disabled = true;
       els.resetButton.disabled = true;
       setBusy(true);
@@ -772,7 +777,7 @@
       try {
         const mmiData = await getMMIData(pset, prop);
         if (mmiData.total === 0) {
-          els.status.textContent = "Ingen objekter med valgt MMI-egenskap funnet.";
+          els.status.textContent = "Ingen objekter med valgt MMI-egenskap funnet (etter filtrering).";
           return;
         }
         createMMIPieChart(pset, prop, mmiData);
@@ -807,7 +812,6 @@
       try {
         await API.viewer.setObjectState(undefined, { color: "reset" });
 
-        // Fargelegg hver MMI-kode med sin farge
         for (const code of codes) {
           const perModel = selectionByCode[code];
           const modelObjectIds = [];
@@ -818,7 +822,6 @@
               modelObjectIds.push({ modelId, objectRuntimeIds: ids });
             }
           }
-
           if (!modelObjectIds.length) continue;
 
           const hex = MMI_COLORS[code] || "#CCCCCC";
@@ -827,15 +830,12 @@
           await API.viewer.setObjectState({ modelObjectIds }, { color: rgba });
         }
 
-        // Objekter uten MMI → grå
         const missingModelIds = Object.keys(missingSelection || {});
         if (missingModelIds.length) {
           const modelObjectIds = [];
           for (const modelId of missingModelIds) {
             const ids = missingSelection[modelId];
-            if (ids && ids.length) {
-              modelObjectIds.push({ modelId, objectRuntimeIds: ids });
-            }
+            if (ids && ids.length) modelObjectIds.push({ modelId, objectRuntimeIds: ids });
           }
           if (modelObjectIds.length) {
             const rgba = hexToRgba("#999999");
@@ -876,7 +876,6 @@
       }
     }
 
-    // Events
     els.scanButton.onclick = scanProperties;
     els.loadButton.onclick = loadMMIChart;
     els.colorizeButton.onclick = colorizeAllMMI;
@@ -890,11 +889,7 @@
       els.resetButton.disabled = true;
     };
 
-    // Start
     connect();
   </script>
 </body>
 </html>
-
-
-
